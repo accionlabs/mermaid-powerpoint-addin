@@ -11,25 +11,57 @@ console.log('🚀 Preparing deployment files...');
 console.log(`GitHub Username: ${GITHUB_USERNAME}`);
 console.log(`Repository Name: ${REPO_NAME}`);
 
-// Update manifest-production.xml
+// Copy dist to docs for GitHub Pages
+const distPath = path.join(__dirname, 'dist');
+const docsPath = path.join(__dirname, 'docs');
+
+// Remove existing docs folder if it exists
+if (fs.existsSync(docsPath)) {
+    fs.rmSync(docsPath, { recursive: true, force: true });
+}
+
+// Copy dist to docs
+function copyRecursiveSync(src, dest) {
+    const exists = fs.existsSync(src);
+    const stats = exists && fs.statSync(src);
+    const isDirectory = exists && stats.isDirectory();
+    
+    if (isDirectory) {
+        fs.mkdirSync(dest, { recursive: true });
+        fs.readdirSync(src).forEach((childItemName) => {
+            copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName));
+        });
+    } else {
+        fs.copyFileSync(src, dest);
+    }
+}
+
+copyRecursiveSync(distPath, docsPath);
+console.log('✅ Copied dist folder to docs for GitHub Pages');
+
+// Update manifest-production.xml in both dist and docs
 const manifestPath = path.join(__dirname, 'dist', 'manifest-production.xml');
+const docsManifestPath = path.join(__dirname, 'docs', 'manifest-production.xml');
 let manifestContent = fs.readFileSync(manifestPath, 'utf8');
 
 manifestContent = manifestContent.replace(/YOUR_USERNAME/g, GITHUB_USERNAME);
 manifestContent = manifestContent.replace(/REPO_NAME/g, REPO_NAME);
 
 fs.writeFileSync(manifestPath, manifestContent);
-console.log('✅ Updated manifest-production.xml');
+fs.writeFileSync(docsManifestPath, manifestContent);
+console.log('✅ Updated manifest-production.xml in dist and docs');
 
-// Update index.html
+// Update index.html in both dist and docs
 const indexPath = path.join(__dirname, 'dist', 'index.html');
+const docsIndexPath = path.join(__dirname, 'docs', 'index.html');
 let indexContent = fs.readFileSync(indexPath, 'utf8');
 
 indexContent = indexContent.replace(/YOUR_USERNAME/g, GITHUB_USERNAME);
 indexContent = indexContent.replace(/REPO_NAME/g, REPO_NAME);
 
 fs.writeFileSync(indexPath, indexContent);
-console.log('✅ Updated index.html');
+fs.writeFileSync(docsIndexPath, indexContent);
+console.log('✅ Updated index.html in dist and docs');
 
 // Update README.md
 const readmePath = path.join(__dirname, 'README.md');
@@ -46,5 +78,5 @@ console.log('\n📋 Next steps:');
 console.log('1. git add .');
 console.log('2. git commit -m "Update URLs for deployment"');
 console.log('3. git push origin main');
-console.log('4. Go to GitHub → Settings → Pages → Source: "Deploy from a branch" → Branch: main → Folder: /dist');
+console.log('4. Go to GitHub → Settings → Pages → Source: "Deploy from a branch" → Branch: main → Folder: /docs');
 console.log(`5. Your add-in will be available at: https://${GITHUB_USERNAME}.github.io/${REPO_NAME}/`);
