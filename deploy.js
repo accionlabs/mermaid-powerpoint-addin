@@ -39,9 +39,9 @@ function copyRecursiveSync(src, dest) {
 copyRecursiveSync(distPath, docsPath);
 console.log('✅ Copied dist folder to docs for GitHub Pages');
 
-// Update manifest-production.xml in both dist and docs
-const manifestPath = path.join(__dirname, 'dist', 'manifest-production.xml');
-const docsManifestPath = path.join(__dirname, 'docs', 'manifest-production.xml');
+// Update manifest.xml in both dist and docs
+const manifestPath = path.join(__dirname, 'dist', 'manifest.xml');
+const docsManifestPath = path.join(__dirname, 'docs', 'manifest.xml');
 let manifestContent = fs.readFileSync(manifestPath, 'utf8');
 
 manifestContent = manifestContent.replace(/YOUR_USERNAME/g, GITHUB_USERNAME);
@@ -49,7 +49,7 @@ manifestContent = manifestContent.replace(/REPO_NAME/g, REPO_NAME);
 
 fs.writeFileSync(manifestPath, manifestContent);
 fs.writeFileSync(docsManifestPath, manifestContent);
-console.log('✅ Updated manifest-production.xml in dist and docs');
+console.log('✅ Updated manifest.xml in dist and docs');
 
 // Update index.html in both dist and docs
 const indexPath = path.join(__dirname, 'dist', 'index.html');
