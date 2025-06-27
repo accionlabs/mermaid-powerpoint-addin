@@ -1,0 +1,35 @@
+{
+  "name": "mermaid-powerpoint-addin",
+  "version": "1.0.0",
+  "description": "PowerPoint Add-in for inserting and editing Mermaid diagrams",
+  "main": "dist/taskpane.js",
+  "scripts": {
+    "build": "webpack --mode production",
+    "build:dev": "webpack --mode development",
+    "dev-server": "webpack serve --mode development",
+    "start": "webpack serve --mode development --port 3000",
+    "validate": "npx office-addin-manifest validate manifest.xml",
+    "sideload": "npx office-addin-debugging start manifest.xml desktop --source-bundle-url-path dist",
+    "deploy": "node deploy.js"
+  },
+  "dependencies": {
+    "@types/office-js": "^1.0.334",
+    "mermaid": "^10.6.1",
+    "office-addin-manifest": "^1.12.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "copy-webpack-plugin": "^11.0.0",
+    "css-loader": "^6.8.1",
+    "html-webpack-plugin": "^5.5.3",
+    "style-loader": "^3.3.3",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.2.2",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.15.1"
+  }
+}
