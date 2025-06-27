@@ -62,6 +62,55 @@
             font-size: 24px;
             margin-right: 15px;
         }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .warning-icon {
+            color: #856404;
+            font-weight: bold;
+        }
+        .code-block {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+        }
+        .tab-container {
+            margin: 20px 0;
+        }
+        .tab-buttons {
+            display: flex;
+            background: #f8f9fa;
+            border-radius: 8px 8px 0 0;
+            overflow: hidden;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 12px 20px;
+            background: #e9ecef;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .tab-button.active {
+            background: #0078d4;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+        }
+        .tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -77,22 +126,86 @@
         <p><small>Download the manifest file and follow the installation steps below</small></p>
     </div>
 
-    <div class="steps">
-        <h2>🚀 Installation Steps</h2>
-        <div class="step">
-            <strong>1.</strong> Download the manifest file above
+    <div class="warning">
+        <span class="warning-icon">⚠️</span> <strong>Important:</strong> PowerPoint Online supports uploading manifest files directly, but PowerPoint Desktop requires manual sideloading to specific folders.
+    </div>
+
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-button active" onclick="showTab('online')">PowerPoint Online</button>
+            <button class="tab-button" onclick="showTab('desktop')">PowerPoint Desktop</button>
         </div>
-        <div class="step">
-            <strong>2.</strong> Open PowerPoint (Desktop version)
+        
+        <div id="online-tab" class="tab-content active">
+            <h3>🌐 PowerPoint Online Installation</h3>
+            <div class="step">
+                <strong>1.</strong> Download the manifest file above
+            </div>
+            <div class="step">
+                <strong>2.</strong> Open PowerPoint Online (office.com)
+            </div>
+            <div class="step">
+                <strong>3.</strong> Go to <strong>Insert</strong> → <strong>Office Add-ins</strong> → <strong>Upload My Add-in</strong>
+            </div>
+            <div class="step">
+                <strong>4.</strong> Select the downloaded <code>manifest-production.xml</code> file
+            </div>
+            <div class="step">
+                <strong>5.</strong> Click <strong>Upload</strong> and the add-in will appear in the ribbon!
+            </div>
         </div>
-        <div class="step">
-            <strong>3.</strong> Go to <strong>Insert</strong> → <strong>Office Add-ins</strong> → <strong>Upload My Add-in</strong>
-        </div>
-        <div class="step">
-            <strong>4.</strong> Select the downloaded <code>manifest-production.xml</code> file
-        </div>
-        <div class="step">
-            <strong>5.</strong> Click <strong>Upload</strong> and the add-in will appear in the ribbon!
+        
+        <div id="desktop-tab" class="tab-content">
+            <h3>💻 PowerPoint Desktop Installation</h3>
+            <p><strong>Desktop PowerPoint requires manual sideloading to specific local folders:</strong></p>
+            
+            <h4>📁 Windows Instructions:</h4>
+            <div class="step">
+                <strong>1.</strong> Download the manifest file above
+            </div>
+            <div class="step">
+                <strong>2.</strong> Open File Explorer and navigate to:
+                <div class="code-block">%USERPROFILE%\AppData\Local\Microsoft\Office\16.0\Wef\</div>
+                <small><em>Create the "Wef" folder if it doesn't exist</em></small>
+            </div>
+            <div class="step">
+                <strong>3.</strong> Copy the downloaded <code>manifest-production.xml</code> file to this folder
+            </div>
+            <div class="step">
+                <strong>4.</strong> Rename it to <code>manifest.xml</code> (remove "-production")
+            </div>
+            <div class="step">
+                <strong>5.</strong> Close PowerPoint completely and restart it
+            </div>
+            <div class="step">
+                <strong>6.</strong> The add-in should appear in the PowerPoint ribbon!
+            </div>
+            
+            <h4>🍎 Mac Instructions:</h4>
+            <div class="step">
+                <strong>1.</strong> Download the manifest file above
+            </div>
+            <div class="step">
+                <strong>2.</strong> Open Finder and navigate to:
+                <div class="code-block">~/Library/Containers/com.microsoft.PowerPoint/Data/Documents/wef</div>
+                <small><em>Create the "wef" folder if it doesn't exist</em></small>
+            </div>
+            <div class="step">
+                <strong>3.</strong> Copy the downloaded <code>manifest-production.xml</code> file to this folder
+            </div>
+            <div class="step">
+                <strong>4.</strong> Rename it to <code>manifest.xml</code> (remove "-production")
+            </div>
+            <div class="step">
+                <strong>5.</strong> Close PowerPoint completely and restart it
+            </div>
+            <div class="step">
+                <strong>6.</strong> The add-in should appear in the PowerPoint ribbon!
+            </div>
+            
+            <div class="warning">
+                <span class="warning-icon">💡</span> <strong>Troubleshooting:</strong> If you have multiple manifest files or cached versions, delete all files in the wef folder, clear the Office cache, then copy only the new manifest file.
+            </div>
         </div>
     </div>
 
@@ -136,5 +249,23 @@
     <div style="text-align: center; margin-top: 40px; color: #666;">
         <p>Made with ❤️ for the PowerPoint community</p>
     </div>
+
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Remove active class from all buttons
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+    </script>
 </body>
 </html>
