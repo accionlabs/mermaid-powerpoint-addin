@@ -1,0 +1,1 @@
+(()=>{"use strict";Office.onReady(()=>{})})();

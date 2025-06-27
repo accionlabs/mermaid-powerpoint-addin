@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Certificate Test</title>
+</head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+    <h1>Certificate Test Page</h1>
+    <p>If you can see this page without security warnings, your certificate is trusted!</p>
+    
+    <div style="background: #e6f3ff; padding: 15px; border-radius: 4px; margin: 20px 0;">
+        <strong>Success!</strong> The localhost certificate is working properly.
+    </div>
+    
+    <p>Now try your PowerPoint add-in again.</p>
+    
+    <script>
+        console.log('Certificate test page loaded successfully');
+        fetch('https://localhost:3000/manifest.xml')
+            .then(response => response.text())
+            .then(data => {
+                console.log('Manifest accessible via HTTPS');
+                document.body.innerHTML += '<div style="background: #d4edda; padding: 15px; border-radius: 4px; margin: 20px 0;"><strong>✅ Manifest also accessible!</strong> Your add-in should work now.</div>';
+            })
+            .catch(err => {
+                console.error('Manifest not accessible', err);
+                document.body.innerHTML += '<div style="background: #f8d7da; padding: 15px; border-radius: 4px; margin: 20px 0;"><strong>❌ Manifest not accessible.</strong> Certificate may still have issues.</div>';
+            });
+    </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sideload Mermaid Add-in</title>
+</head>
+<body>
+    <h1>Mermaid PowerPoint Add-in</h1>
+    <p>To sideload this add-in:</p>
+    <ol>
+        <li>Copy this URL: <code>https://localhost:3000/manifest.xml</code></li>
+        <li>In PowerPoint, go to Insert → My Add-ins → Manage My Add-ins</li>
+        <li>Click "Upload My Add-in" and paste the URL</li>
+    </ol>
+    
+    <p><a href="https://localhost:3000/manifest.xml" target="_blank">Click here to view manifest</a></p>
+    <p><a href="https://localhost:3000/taskpane.html" target="_blank">Click here to test task pane</a></p>
+    
+    <script>
+        // Test if we can reach the manifest
+        fetch('https://localhost:3000/manifest.xml')
+            .then(response => response.text())
+            .then(data => {
+                console.log('Manifest accessible');
+                document.getElementById('status').textContent = 'Manifest is accessible ✓';
+            })
+            .catch(err => {
+                console.error('Manifest not accessible', err);
+                document.getElementById('status').textContent = 'Manifest not accessible ✗';
+            });
+    </script>
+    
+    <p id="status">Checking manifest...</p>
+</body>
+</html>
