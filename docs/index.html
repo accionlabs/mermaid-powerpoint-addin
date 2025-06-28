@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mermaid PowerPoint Add-in</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .download-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .download-btn {
+            background: #0078d4;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            display: inline-block;
+            margin: 10px;
+        }
+        .download-btn:hover {
+            background: #106ebe;
+        }
+        .feature {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .feature-icon {
+            font-size: 24px;
+            margin-right: 15px;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .warning-icon {
+            color: #856404;
+            font-weight: bold;
+        }
+        .code-block {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+        }
+        .tab-container {
+            margin: 20px 0;
+        }
+        .tab-buttons {
+            display: flex;
+            background: #f8f9fa;
+            border-radius: 8px 8px 0 0;
+            overflow: hidden;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 12px 20px;
+            background: #e9ecef;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .tab-button.active {
+            background: #0078d4;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 0 0 8px 8px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .step {
+            margin: 15px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">📊</div>
+        <h1>Mermaid PowerPoint Add-in</h1>
+        <p>Create and edit beautiful Mermaid diagrams directly in PowerPoint!</p>
+    </div>
+
+    <div class="download-section">
+        <h2>📥 Install the Add-in</h2>
+        <a href="manifest.xml" class="download-btn" download>Download Manifest File</a>
+        <p><small>Download the manifest file and follow the installation steps below</small></p>
+    </div>
+
+    <div class="warning">
+        <span class="warning-icon">⚠️</span> <strong>Important:</strong> PowerPoint Online supports uploading manifest files directly, but PowerPoint Desktop requires manual sideloading to specific folders.
+    </div>
+
+    <div class="tab-container">
+        <div class="tab-buttons">
+            <button class="tab-button active" onclick="showTab('online')">PowerPoint Online</button>
+            <button class="tab-button" onclick="showTab('desktop')">PowerPoint Desktop</button>
+        </div>
+        
+        <div id="online-tab" class="tab-content active">
+            <h3>🌐 PowerPoint Online Installation</h3>
+            <div class="step">
+                <strong>1.</strong> Download the manifest file above
+            </div>
+            <div class="step">
+                <strong>2.</strong> Open PowerPoint Online (office.com)
+            </div>
+            <div class="step">
+                <strong>3.</strong> Go to <strong>Insert</strong> → <strong>Office Add-ins</strong> → <strong>Upload My Add-in</strong>
+            </div>
+            <div class="step">
+                <strong>4.</strong> Select the downloaded <code>manifest.xml</code> file
+            </div>
+            <div class="step">
+                <strong>5.</strong> Click <strong>Upload</strong> and the add-in will appear in the ribbon!
+            </div>
+        </div>
+        
+        <div id="desktop-tab" class="tab-content">
+            <h3>💻 PowerPoint Desktop Installation</h3>
+            <p><strong>Desktop PowerPoint requires manual sideloading to specific local folders:</strong></p>
+            
+            <h4>📁 Windows Instructions:</h4>
+            <div class="step">
+                <strong>1.</strong> Download the manifest file above
+            </div>
+            <div class="step">
+                <strong>2.</strong> Open File Explorer and navigate to:
+                <div class="code-block">%USERPROFILE%\AppData\Local\Microsoft\Office\16.0\Wef\</div>
+                <small><em>Create the "Wef" folder if it doesn't exist</em></small>
+            </div>
+            <div class="step">
+                <strong>3.</strong> Copy the downloaded <code>manifest.xml</code> file to this folder
+            </div>
+            <div class="step">
+                <strong>4.</strong> Close PowerPoint completely and restart it
+            </div>
+            <div class="step">
+                <strong>5.</strong> The add-in should appear in the PowerPoint ribbon!
+            </div>
+            
+            <h4>🍎 Mac Instructions:</h4>
+            <div class="step">
+                <strong>1.</strong> Download the manifest file above
+            </div>
+            <div class="step">
+                <strong>2.</strong> Open Finder and navigate to:
+                <div class="code-block">~/Library/Containers/com.microsoft.PowerPoint/Data/Documents/wef</div>
+                <small><em>Create the "wef" folder if it doesn't exist</em></small>
+            </div>
+            <div class="step">
+                <strong>3.</strong> Copy the downloaded <code>manifest.xml</code> file to this folder
+            </div>
+            <div class="step">
+                <strong>4.</strong> Close PowerPoint completely and restart it
+            </div>
+            <div class="step">
+                <strong>5.</strong> The add-in should appear in the PowerPoint ribbon!
+            </div>
+            
+            <div class="warning">
+                <span class="warning-icon">💡</span> <strong>Troubleshooting:</strong> If you have multiple manifest files or cached versions, delete all files in the wef folder, clear the Office cache, then copy only the new manifest file.
+            </div>
+        </div>
+    </div>
+
+    <h2>✨ New Features</h2>
+    <div class="feature">
+        <span class="feature-icon">⚙️</span>
+        <div>
+            <strong>Settings & Themes</strong><br>
+            Customize fonts, colors, and diagram themes with persistent settings
+        </div>
+    </div>
+    <div class="feature">
+        <span class="feature-icon">🚀</span>
+        <div>
+            <strong>Auto-Preview</strong><br>
+            Insert diagrams directly from code - no need to generate preview first
+        </div>
+    </div>
+    <div class="feature">
+        <span class="feature-icon">📝</span>
+        <div>
+            <strong>Create & Edit</strong><br>
+            Write Mermaid code and see instant previews
+        </div>
+    </div>
+    <div class="feature">
+        <span class="feature-icon">🎯</span>
+        <div>
+            <strong>Smart Editing</strong><br>
+            Click on existing diagrams to edit their source code
+        </div>
+    </div>
+    <div class="feature">
+        <span class="feature-icon">📊</span>
+        <div>
+            <strong>Perfect Integration</strong><br>
+            Diagrams are inserted as high-quality images with preserved aspect ratio
+        </div>
+    </div>
+    <div class="feature">
+        <span class="feature-icon">💾</span>
+        <div>
+            <strong>Persistent Storage</strong><br>
+            Your diagram source code and settings are saved with the PowerPoint file
+        </div>
+    </div>
+
+    <h2>🔗 Resources</h2>
+    <ul>
+        <li><a href="https://mermaid.js.org/syntax/flowchart.html" target="_blank">Mermaid Syntax Documentation</a></li>
+        <li><a href="https://github.com/accionlabs/mermaid-powerpoint-addin" target="_blank">Source Code on GitHub</a></li>
+        <li><a href="https://github.com/accionlabs/mermaid-powerpoint-addin/issues" target="_blank">Report Issues</a></li>
+    </ul>
+
+    <div style="text-align: center; margin-top: 40px; color: #666;">
+        <p>Made with ❤️ for the PowerPoint community</p>
+    </div>
+
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Remove active class from all buttons
+            const tabButtons = document.querySelectorAll('.tab-button');
+            tabButtons.forEach(button => button.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
