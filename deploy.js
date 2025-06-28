@@ -51,17 +51,19 @@ fs.writeFileSync(manifestPath, manifestContent);
 fs.writeFileSync(docsManifestPath, manifestContent);
 console.log('✅ Updated manifest.xml in dist and docs');
 
-// Update index.html in both dist and docs
-const indexPath = path.join(__dirname, 'dist', 'index.html');
+// Update index.html (only exists in docs folder)
 const docsIndexPath = path.join(__dirname, 'docs', 'index.html');
-let indexContent = fs.readFileSync(indexPath, 'utf8');
-
-indexContent = indexContent.replace(/YOUR_USERNAME/g, GITHUB_USERNAME);
-indexContent = indexContent.replace(/REPO_NAME/g, REPO_NAME);
-
-fs.writeFileSync(indexPath, indexContent);
-fs.writeFileSync(docsIndexPath, indexContent);
-console.log('✅ Updated index.html in dist and docs');
+if (fs.existsSync(docsIndexPath)) {
+  let indexContent = fs.readFileSync(docsIndexPath, 'utf8');
+  
+  indexContent = indexContent.replace(/YOUR_USERNAME/g, GITHUB_USERNAME);
+  indexContent = indexContent.replace(/REPO_NAME/g, REPO_NAME);
+  
+  fs.writeFileSync(docsIndexPath, indexContent);
+  console.log('✅ Updated index.html in docs');
+} else {
+  console.log('ℹ️ No index.html found - skipping (normal for build artifacts)');
+}
 
 // Update README.md
 const readmePath = path.join(__dirname, 'README.md');

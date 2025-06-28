@@ -8,6 +8,32 @@ export interface DiagramData {
   code: string;
 }
 
+export interface MermaidSettings {
+  fontFamily: string;
+  fontSize: number;
+  primaryColor: string;
+  primaryTextColor: string;
+  primaryBorderColor: string;
+  lineColor: string;
+  backgroundColor: string;
+  secondaryColor: string;
+  tertiaryColor: string;
+  theme: 'default' | 'dark' | 'forest' | 'base' | 'custom';
+}
+
+export const defaultSettings: MermaidSettings = {
+  fontFamily: 'Arial, sans-serif',
+  fontSize: 16,
+  primaryColor: '#0078d4',
+  primaryTextColor: '#000000',
+  primaryBorderColor: '#0078d4',
+  lineColor: '#000000',
+  backgroundColor: '#ffffff',
+  secondaryColor: '#e6f3ff',
+  tertiaryColor: '#b3d9ff',
+  theme: 'default'
+};
+
 // Convert SVG to base64 PNG with transparent background and correct dimensions
 export const svgToPng = (svgString: string): Promise<{base64: string, width: number, height: number}> => {
   return new Promise((resolve, reject) => {
@@ -1319,4 +1345,132 @@ const shapesApproximatelyMatch = (info1: string, info2: string): boolean => {
   console.log(`Position match: left diff=${Math.abs(left1 - left2)}, top diff=${Math.abs(top1 - top2)}`);
   console.log(`Size match: width ratio=${widthRatio.toFixed(3)}, height ratio=${heightRatio.toFixed(3)}`);
   return true;
+};
+
+// Save settings to Custom XML Parts
+export const saveSettings = async (settings: MermaidSettings): Promise<void> => {
+  if (!isOfficeContext) {
+    console.log('Demo mode: Would save settings:', settings);
+    return;
+  }
+
+  return PowerPoint.run(async (context) => {
+    const presentation = context.presentation;
+    const customXmlParts = presentation.customXmlParts;
+    
+    // First, remove any existing settings XML parts
+    customXmlParts.load('items');
+    await context.sync();
+    
+    // Remove existing settings
+    for (let i = customXmlParts.items.length - 1; i >= 0; i--) {
+      const xmlPart = customXmlParts.items[i];
+      try {
+        const xmlContent = xmlPart.getXml();
+        await context.sync();
+        
+        if (xmlContent && xmlContent.value && xmlContent.value.includes('<MermaidSettings>')) {
+          xmlPart.delete();
+          console.log('Removed existing settings XML part');
+        }
+      } catch (error) {
+        // Ignore errors when checking individual parts
+        continue;
+      }
+    }
+    
+    await context.sync();
+    
+    // Create new settings XML
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<MermaidSettings>
+  <FontFamily><![CDATA[${settings.fontFamily}]]></FontFamily>
+  <FontSize>${settings.fontSize}</FontSize>
+  <PrimaryColor>${settings.primaryColor}</PrimaryColor>
+  <PrimaryTextColor>${settings.primaryTextColor}</PrimaryTextColor>
+  <PrimaryBorderColor>${settings.primaryBorderColor}</PrimaryBorderColor>
+  <LineColor>${settings.lineColor}</LineColor>
+  <BackgroundColor>${settings.backgroundColor}</BackgroundColor>
+  <SecondaryColor>${settings.secondaryColor}</SecondaryColor>
+  <TertiaryColor>${settings.tertiaryColor}</TertiaryColor>
+  <Theme>${settings.theme}</Theme>
+  <UpdatedAt>${new Date().toISOString()}</UpdatedAt>
+</MermaidSettings>`;
+
+    customXmlParts.add(xmlContent);
+    await context.sync();
+    console.log('Settings saved successfully');
+  });
+};
+
+// Load settings from Custom XML Parts
+export const loadSettings = async (): Promise<MermaidSettings> => {
+  if (!isOfficeContext) {
+    console.log('Demo mode: Using default settings');
+    return defaultSettings;
+  }
+
+  return PowerPoint.run(async (context) => {
+    const presentation = context.presentation;
+    const customXmlParts = presentation.customXmlParts;
+    customXmlParts.load('items');
+    await context.sync();
+
+    // Look for settings XML part
+    for (let i = 0; i < customXmlParts.items.length; i++) {
+      const xmlPart = customXmlParts.items[i];
+      
+      try {
+        const xmlContent = xmlPart.getXml();
+        await context.sync();
+        
+        if (xmlContent && xmlContent.value && xmlContent.value.includes('<MermaidSettings>')) {
+          const xmlDoc = new DOMParser().parseFromString(xmlContent.value, 'text/xml');
+          
+          // Check for parsing errors
+          const parserError = xmlDoc.querySelector('parsererror');
+          if (parserError) {
+            console.log('Settings XML parse error:', parserError.textContent);
+            continue;
+          }
+          
+          // Extract settings values
+          const fontFamilyElement = xmlDoc.querySelector('FontFamily');
+          const fontSizeElement = xmlDoc.querySelector('FontSize');
+          const primaryColorElement = xmlDoc.querySelector('PrimaryColor');
+          const primaryTextColorElement = xmlDoc.querySelector('PrimaryTextColor');
+          const primaryBorderColorElement = xmlDoc.querySelector('PrimaryBorderColor');
+          const lineColorElement = xmlDoc.querySelector('LineColor');
+          const backgroundColorElement = xmlDoc.querySelector('BackgroundColor');
+          const secondaryColorElement = xmlDoc.querySelector('SecondaryColor');
+          const tertiaryColorElement = xmlDoc.querySelector('TertiaryColor');
+          const themeElement = xmlDoc.querySelector('Theme');
+          
+          if (fontFamilyElement && fontSizeElement && primaryColorElement) {
+            const loadedSettings: MermaidSettings = {
+              fontFamily: fontFamilyElement.textContent || defaultSettings.fontFamily,
+              fontSize: parseInt(fontSizeElement.textContent || '16') || defaultSettings.fontSize,
+              primaryColor: primaryColorElement.textContent || defaultSettings.primaryColor,
+              primaryTextColor: primaryTextColorElement?.textContent || defaultSettings.primaryTextColor,
+              primaryBorderColor: primaryBorderColorElement?.textContent || defaultSettings.primaryBorderColor,
+              lineColor: lineColorElement?.textContent || defaultSettings.lineColor,
+              backgroundColor: backgroundColorElement?.textContent || defaultSettings.backgroundColor,
+              secondaryColor: secondaryColorElement?.textContent || defaultSettings.secondaryColor,
+              tertiaryColor: tertiaryColorElement?.textContent || defaultSettings.tertiaryColor,
+              theme: (themeElement?.textContent as MermaidSettings['theme']) || defaultSettings.theme
+            };
+            
+            console.log('Settings loaded successfully:', loadedSettings);
+            return loadedSettings;
+          }
+        }
+      } catch (error) {
+        console.log('Error reading settings XML part:', error);
+        continue;
+      }
+    }
+    
+    console.log('No settings found, using defaults');
+    return defaultSettings;
+  });
 };

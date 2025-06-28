@@ -1,7 +1,8 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import mermaid from 'mermaid';
-import { insertDiagram, updateDiagram, getSelectedDiagram, listAllStoredDiagrams, getSelectedShapeInfo, testDiagramStorage, checkOfficeContext } from '../utils/powerPointUtils';
+import { insertDiagram, updateDiagram, getSelectedDiagram, listAllStoredDiagrams, getSelectedShapeInfo, testDiagramStorage, checkOfficeContext, loadSettings, saveSettings, MermaidSettings, defaultSettings } from '../utils/powerPointUtils';
+import Settings from './Settings';
 
 /* global Office */
 
@@ -22,21 +23,66 @@ const MermaidEditor: React.FC = () => {
   const [selectedDiagramId, setSelectedDiagramId] = useState<string | null>(null);
   const [debugInfo, setDebugInfo] = useState('');
   const [showDebugMode, setShowDebugMode] = useState(false);
+  const [settings, setSettings] = useState<MermaidSettings>(defaultSettings);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
-    mermaid.initialize({ 
-      startOnLoad: false,
-      theme: 'default',
-      securityLevel: 'loose',
-      fontFamily: 'arial'
-    });
-    
-    // Check if there's a selected diagram to edit
-    checkSelectedDiagram();
-    
-    // Initial render
-    renderMermaid();
+    initializeMermaidAndSettings();
   }, []);
+
+  useEffect(() => {
+    // Apply settings whenever they change
+    applyMermaidSettings();
+  }, [settings]);
+
+  const initializeMermaidAndSettings = async () => {
+    try {
+      // Load saved settings
+      const loadedSettings = await loadSettings();
+      setSettings(loadedSettings);
+      
+      // Initialize mermaid with loaded settings
+      applyMermaidSettings(loadedSettings);
+      
+      // Check if there's a selected diagram to edit
+      checkSelectedDiagram();
+      
+      // Initial render
+      setTimeout(() => renderMermaid(), 100);
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      // Use default settings if loading fails
+      applyMermaidSettings(defaultSettings);
+      checkSelectedDiagram();
+      setTimeout(() => renderMermaid(), 100);
+    }
+  };
+
+  const applyMermaidSettings = (settingsToApply: MermaidSettings = settings) => {
+    const mermaidConfig = {
+      startOnLoad: false,
+      theme: settingsToApply.theme === 'custom' ? 'base' : settingsToApply.theme,
+      securityLevel: 'loose' as const,
+      fontFamily: settingsToApply.fontFamily
+    };
+
+    // Add theme variables for custom theme
+    if (settingsToApply.theme === 'custom') {
+      (mermaidConfig as any).themeVariables = {
+        primaryColor: settingsToApply.primaryColor,
+        primaryTextColor: settingsToApply.primaryTextColor,
+        primaryBorderColor: settingsToApply.primaryBorderColor,
+        lineColor: settingsToApply.lineColor,
+        secondaryColor: settingsToApply.secondaryColor,
+        tertiaryColor: settingsToApply.tertiaryColor,
+        fontFamily: settingsToApply.fontFamily,
+        fontSize: `${settingsToApply.fontSize}px`
+      };
+    }
+
+    mermaid.initialize(mermaidConfig);
+    console.log('Mermaid configuration updated:', mermaidConfig);
+  };
 
   // Removed auto-refresh on code change - now only manual refresh
 
@@ -87,28 +133,66 @@ const MermaidEditor: React.FC = () => {
     }
   };
 
+  const generateSvgForInsertion = async (): Promise<string> => {
+    // Basic validation - check if code looks valid
+    const trimmedCode = mermaidCode.trim();
+    if (trimmedCode.length < 10) {
+      throw new Error('Code is too short - please enter a complete Mermaid diagram');
+    }
+    
+    // Check for basic mermaid syntax
+    const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context)/i.test(trimmedCode);
+    if (!hasValidStart) {
+      throw new Error('Invalid Mermaid syntax - diagrams must start with a valid diagram type (graph, flowchart, sequenceDiagram, etc.)');
+    }
+    
+    // Create a unique ID for this render
+    const renderID = 'mermaid-insertion-' + Date.now();
+    
+    // Use mermaid.render to generate SVG
+    const { svg } = await mermaid.render(renderID, mermaidCode);
+    return svg;
+  };
+
   const handleInsert = async () => {
-    if (!svgContent) {
-      setError('No valid diagram to insert. Please click "🔄 Update Preview" first to generate the diagram.');
-      setSuccessMessage('');
-      return;
+    let svgToUse = svgContent;
+    
+    // Auto-generate preview if it doesn't exist
+    if (!svgToUse) {
+      setError('');
+      setSuccessMessage('Generating preview and inserting diagram...');
+      
+      try {
+        // Generate the SVG directly for insertion
+        svgToUse = await generateSvgForInsertion();
+        
+        // Also update the preview state for the UI
+        setSvgContent(svgToUse);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to generate diagram';
+        setError(`Failed to generate diagram: ${errorMessage}`);
+        setSuccessMessage('');
+        return;
+      }
     }
 
     try {
       setError('');
-      setSuccessMessage('');
+      if (!svgToUse) {
+        setSuccessMessage('');
+      }
       
       console.log('Starting diagram insertion...');
       
       if (isEditing && selectedDiagramId) {
         console.log('Updating existing diagram:', selectedDiagramId);
-        await updateDiagram(selectedDiagramId, mermaidCode, svgContent);
+        await updateDiagram(selectedDiagramId, mermaidCode, svgToUse);
         setSuccessMessage('Diagram updated successfully!');
         // Keep the current state - don't reset after update
         setError('');
       } else {
         console.log('Inserting new diagram...');
-        await insertDiagram(mermaidCode, svgContent);
+        await insertDiagram(mermaidCode, svgToUse);
         setSuccessMessage('Diagram inserted successfully!');
         // Only reset after inserting a new diagram
         setIsEditing(false);
@@ -261,6 +345,31 @@ const MermaidEditor: React.FC = () => {
     setTimeout(() => setSuccessMessage(''), 3000);
   };
 
+  const handleSettingsChange = async (newSettings: MermaidSettings) => {
+    try {
+      setSettings(newSettings);
+      await saveSettings(newSettings);
+      setSuccessMessage('Settings saved successfully! New diagrams will use these settings.');
+      setTimeout(() => setSuccessMessage(''), 5000);
+      
+      // Re-render current preview with new settings
+      setTimeout(() => renderMermaid(), 100);
+    } catch (error) {
+      setError('Failed to save settings. Please try again.');
+      console.error('Settings save error:', error);
+    }
+  };
+
+  const handleOpenSettings = () => {
+    setShowSettings(true);
+    setError('');
+    setSuccessMessage('');
+  };
+
+  const handleCloseSettings = () => {
+    setShowSettings(false);
+  };
+
   return (
     <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', height: '100vh' }}>
       {/* Header Section */}
@@ -309,6 +418,26 @@ const MermaidEditor: React.FC = () => {
               justifyContent: 'center'
             }}>
             📝
+          </button>
+
+          <button 
+            onClick={handleOpenSettings}
+            title="Diagram Settings"
+            style={{
+              padding: '12px 16px',
+              backgroundColor: '#17a2b8',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              flex: '1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+            ⚙️
           </button>
 
           <button 
@@ -483,15 +612,14 @@ const MermaidEditor: React.FC = () => {
 
           <button
             onClick={handleInsert}
-            disabled={!svgContent}
-            title={isEditing ? 'Update Diagram' : 'Insert Diagram'}
+            title={isEditing ? 'Update Diagram (auto-generates preview if needed)' : 'Insert Diagram (auto-generates preview if needed)'}
             style={{
               padding: '12px 16px',
-              backgroundColor: svgContent ? '#0078d4' : '#ccc',
+              backgroundColor: '#0078d4',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: svgContent ? 'pointer' : 'not-allowed',
+              cursor: 'pointer',
               fontSize: '16px',
               fontWeight: 'bold',
               flex: '1',
@@ -693,6 +821,38 @@ const MermaidEditor: React.FC = () => {
               backgroundColor: 'white'
             }}
           />
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            width: '90%',
+            overflowY: 'auto',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+          }}>
+            <Settings
+              settings={settings}
+              onSettingsChange={handleSettingsChange}
+              onClose={handleCloseSettings}
+            />
+          </div>
         </div>
       )}
     </div>
