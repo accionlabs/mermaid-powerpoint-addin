@@ -113,7 +113,7 @@ const MermaidEditor: React.FC = () => {
       }
       
       // Check for basic mermaid syntax
-      const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context)/i.test(trimmedCode);
+      const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context|mindmap)/i.test(trimmedCode);
       if (!hasValidStart) {
         // Doesn't start with valid mermaid syntax, probably still typing
         return;
@@ -141,9 +141,9 @@ const MermaidEditor: React.FC = () => {
     }
     
     // Check for basic mermaid syntax
-    const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context)/i.test(trimmedCode);
+    const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context|mindmap)/i.test(trimmedCode);
     if (!hasValidStart) {
-      throw new Error('Invalid Mermaid syntax - diagrams must start with a valid diagram type (graph, flowchart, sequenceDiagram, etc.)');
+      throw new Error('Invalid Mermaid syntax - diagrams must start with a valid diagram type (graph, flowchart, sequenceDiagram, mindmap, etc.)');
     }
     
     // Create a unique ID for this render
