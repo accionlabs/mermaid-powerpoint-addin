@@ -76,7 +76,35 @@ const MermaidEditor: React.FC = () => {
         secondaryColor: settingsToApply.secondaryColor,
         tertiaryColor: settingsToApply.tertiaryColor,
         fontFamily: settingsToApply.fontFamily,
-        fontSize: `${settingsToApply.fontSize}px`
+        fontSize: `${settingsToApply.fontSize}px`,
+        
+        // Timeline-specific colors (use primary color for all timeline sections)
+        cScale0: settingsToApply.primaryColor,
+        cScale1: settingsToApply.secondaryColor,
+        cScale2: settingsToApply.tertiaryColor,
+        cScale3: settingsToApply.primaryColor,
+        cScale4: settingsToApply.secondaryColor,
+        cScale5: settingsToApply.tertiaryColor,
+        cScale6: settingsToApply.primaryColor,
+        cScale7: settingsToApply.secondaryColor,
+        cScale8: settingsToApply.tertiaryColor,
+        cScale9: settingsToApply.primaryColor,
+        cScale10: settingsToApply.secondaryColor,
+        cScale11: settingsToApply.tertiaryColor,
+        
+        // Timeline text colors
+        cScaleLabel0: settingsToApply.primaryTextColor,
+        cScaleLabel1: settingsToApply.primaryTextColor,
+        cScaleLabel2: settingsToApply.primaryTextColor,
+        cScaleLabel3: settingsToApply.primaryTextColor,
+        cScaleLabel4: settingsToApply.primaryTextColor,
+        cScaleLabel5: settingsToApply.primaryTextColor,
+        cScaleLabel6: settingsToApply.primaryTextColor,
+        cScaleLabel7: settingsToApply.primaryTextColor,
+        cScaleLabel8: settingsToApply.primaryTextColor,
+        cScaleLabel9: settingsToApply.primaryTextColor,
+        cScaleLabel10: settingsToApply.primaryTextColor,
+        cScaleLabel11: settingsToApply.primaryTextColor
       };
     }
 
