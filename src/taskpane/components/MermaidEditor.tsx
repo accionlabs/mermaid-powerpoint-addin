@@ -81,7 +81,6 @@ const MermaidEditor: React.FC = () => {
     }
 
     mermaid.initialize(mermaidConfig);
-    console.log('Mermaid configuration updated:', mermaidConfig);
   };
 
   // Removed auto-refresh on code change - now only manual refresh
@@ -107,15 +106,8 @@ const MermaidEditor: React.FC = () => {
       
       // Basic validation - don't render if code looks incomplete
       const trimmedCode = mermaidCode.trim();
-      if (trimmedCode.length < 10) {
+      if (trimmedCode.length < 5) {
         // Code is too short, probably still typing
-        return;
-      }
-      
-      // Check for basic mermaid syntax
-      const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context|mindmap)/i.test(trimmedCode);
-      if (!hasValidStart) {
-        // Doesn't start with valid mermaid syntax, probably still typing
         return;
       }
       
@@ -136,14 +128,8 @@ const MermaidEditor: React.FC = () => {
   const generateSvgForInsertion = async (): Promise<string> => {
     // Basic validation - check if code looks valid
     const trimmedCode = mermaidCode.trim();
-    if (trimmedCode.length < 10) {
+    if (trimmedCode.length < 5) {
       throw new Error('Code is too short - please enter a complete Mermaid diagram');
-    }
-    
-    // Check for basic mermaid syntax
-    const hasValidStart = /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gitgraph|pie|requirement|C4Context|mindmap)/i.test(trimmedCode);
-    if (!hasValidStart) {
-      throw new Error('Invalid Mermaid syntax - diagrams must start with a valid diagram type (graph, flowchart, sequenceDiagram, mindmap, etc.)');
     }
     
     // Create a unique ID for this render
