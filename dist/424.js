@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkmermaid_powerpoint_addin=self.webpackChunkmermaid_powerpoint_addin||[]).push([[424],{3424:(e,r,i)=>{i.d(r,{createArchitectureServices:()=>a.S});var a=i(4318);i(7038)}}]);
