@@ -25,7 +25,20 @@ export function detectOfficePlatform(): OfficePlatform {
 }
 
 export function checkWordApiSupport(): boolean {
-  return Office.context.requirements.isSetSupported('WordApi', '1.1');
+  // Check for Word API 1.3 which has better picture insertion support
+  if (Office.context.requirements.isSetSupported('WordApi', '1.3')) {
+    console.log('Word API 1.3 supported');
+    return true;
+  }
+  
+  // Fallback to 1.1 for basic support
+  if (Office.context.requirements.isSetSupported('WordApi', '1.1')) {
+    console.log('Word API 1.1 supported (basic)');
+    return true;
+  }
+  
+  console.log('Word API not supported');
+  return false;
 }
 
 export function checkPowerPointApiSupport(): boolean {
@@ -77,32 +90,117 @@ class PowerPointInserter implements DiagramInserter {
 // Word implementation
 class WordInserter implements DiagramInserter {
   async insertDiagram(mermaidCode: string, svgContent: string): Promise<void> {
+    console.log('WordInserter: Starting diagram insertion');
+    console.log('WordInserter: SVG content length:', svgContent.length);
+    
     if (!checkWordApiSupport()) {
-      throw new Error('Word API not supported. Please use a newer version of Word.');
+      throw new Error('Word API 1.1 not supported. Please use Microsoft Word 2016 or newer.');
     }
+    
+    console.log('WordInserter: Word API support confirmed');
     
     await Word.run(async (context) => {
       try {
-        // Convert SVG to base64
-        const base64Svg = btoa(svgContent);
+        console.log('WordInserter: Entered Word.run context');
+        
+        // Validate SVG content
+        if (!svgContent || svgContent.trim().length === 0) {
+          throw new Error('SVG content is empty or invalid');
+        }
+        
+        if (!svgContent.includes('<svg')) {
+          throw new Error('Content does not appear to be valid SVG');
+        }
+        
+        console.log('WordInserter: SVG validation passed');
+        
+        // Convert SVG to base64 - ensure it's properly encoded
+        let base64Svg;
+        try {
+          base64Svg = btoa(unescape(encodeURIComponent(svgContent)));
+          console.log('WordInserter: Base64 conversion successful, length:', base64Svg.length);
+        } catch (base64Error) {
+          console.error('WordInserter: Base64 conversion failed:', base64Error);
+          const errorMessage = base64Error instanceof Error ? base64Error.message : String(base64Error);
+          throw new Error(`Failed to encode SVG to base64: ${errorMessage}`);
+        }
         
         // Insert the SVG as an inline picture
-        const picture = context.document.body.insertInlinePictureFromBase64(
-          base64Svg, 
-          Word.InsertLocation.end
-        );
+        console.log('WordInserter: Attempting insertInlinePictureFromBase64');
+        
+        // Try the direct approach first
+        let picture;
+        try {
+          picture = context.document.body.insertInlinePictureFromBase64(
+            base64Svg, 
+            Word.InsertLocation.end
+          );
+        } catch (insertError) {
+          console.log('WordInserter: Direct SVG insertion failed, trying alternative methods');
+          
+          // Alternative 1: Try inserting at current selection instead of body.end
+          try {
+            const selection = context.document.getSelection();
+            picture = selection.insertInlinePictureFromBase64(base64Svg, Word.InsertLocation.replace);
+            console.log('WordInserter: Alternative insertion via selection succeeded');
+          } catch (altError) {
+            console.log('WordInserter: Selection insertion also failed');
+            throw insertError; // Throw original error
+          }
+        }
+        
+        console.log('WordInserter: Picture insertion command queued');
+        
+        // Load picture properties to verify insertion
+        picture.load(['width', 'height']);
+        
+        // Sync to execute the insertion
+        console.log('WordInserter: Syncing context...');
+        await context.sync();
+        
+        console.log('WordInserter: Picture inserted successfully, dimensions:', picture.width, 'x', picture.height);
         
         // Add some spacing after the diagram
+        console.log('WordInserter: Adding paragraph spacing');
         picture.insertParagraph('', Word.InsertLocation.after);
         
         // Store diagram metadata
+        console.log('WordInserter: Storing diagram metadata');
         const diagramId = generateId();
         await this.storeDiagramMetadata(diagramId, mermaidCode);
         
+        // Final sync
         await context.sync();
+        console.log('WordInserter: Diagram insertion completed successfully');
+        
       } catch (error) {
-        console.error('Word diagram insertion failed:', error);
-        throw new Error(`Failed to insert diagram in Word: ${error}`);
+        console.error('WordInserter: Detailed error information:');
+        
+        if (error instanceof Error) {
+          console.error('WordInserter: Error name:', error.name);
+          console.error('WordInserter: Error message:', error.message);
+          console.error('WordInserter: Error stack:', error.stack);
+        } else {
+          console.error('WordInserter: Unknown error type:', error);
+        }
+        
+        if ((error as any).debugInfo) {
+          console.error('WordInserter: Debug info:', JSON.stringify((error as any).debugInfo, null, 2));
+        }
+        
+        // Provide more specific error messages based on error type
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        let userMessage = `Failed to insert diagram in Word: ${errorMessage}`;
+        
+        if (errorMessage && errorMessage.includes('InvalidArgument')) {
+          userMessage = 'The diagram format is not supported by Word. Please try a different diagram type.';
+        } else if (errorMessage && errorMessage.includes('GeneralException')) {
+          userMessage = 'Word encountered an issue inserting the diagram. This may be due to API limitations or document permissions.';
+        } else if (errorMessage && errorMessage.includes('AccessDenied')) {
+          userMessage = 'Permission denied. Please ensure the document is not protected and try again.';
+        }
+        
+        throw new Error(userMessage);
       }
     });
   }
