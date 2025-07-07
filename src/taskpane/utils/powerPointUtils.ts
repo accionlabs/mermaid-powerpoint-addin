@@ -114,34 +114,39 @@ class WordInserter implements DiagramInserter {
         
         console.log('WordInserter: SVG validation passed');
         
-        // Convert SVG to base64 - ensure it's properly encoded
-        let base64Svg;
+        // Word doesn't support SVG directly via insertInlinePictureFromBase64
+        // Convert SVG to PNG first
+        console.log('WordInserter: Converting SVG to PNG for Word compatibility');
+        
+        let base64Png;
         try {
-          base64Svg = btoa(unescape(encodeURIComponent(svgContent)));
-          console.log('WordInserter: Base64 conversion successful, length:', base64Svg.length);
-        } catch (base64Error) {
-          console.error('WordInserter: Base64 conversion failed:', base64Error);
-          const errorMessage = base64Error instanceof Error ? base64Error.message : String(base64Error);
-          throw new Error(`Failed to encode SVG to base64: ${errorMessage}`);
+          const pngData = await this.convertSvgToPng(svgContent);
+          base64Png = pngData.base64;
+          console.log('WordInserter: SVG to PNG conversion successful, size:', pngData.width, 'x', pngData.height);
+          console.log('WordInserter: PNG base64 length:', base64Png.length);
+        } catch (conversionError) {
+          console.error('WordInserter: SVG to PNG conversion failed:', conversionError);
+          const errorMessage = conversionError instanceof Error ? conversionError.message : String(conversionError);
+          throw new Error(`Failed to convert SVG to PNG for Word: ${errorMessage}`);
         }
         
         // Insert the SVG as an inline picture
         console.log('WordInserter: Attempting insertInlinePictureFromBase64');
         
-        // Try the direct approach first
+        // Try inserting the PNG
         let picture;
         try {
           picture = context.document.body.insertInlinePictureFromBase64(
-            base64Svg, 
+            base64Png, 
             Word.InsertLocation.end
           );
         } catch (insertError) {
-          console.log('WordInserter: Direct SVG insertion failed, trying alternative methods');
+          console.log('WordInserter: Direct PNG insertion failed, trying alternative methods');
           
           // Alternative 1: Try inserting at current selection instead of body.end
           try {
             const selection = context.document.getSelection();
-            picture = selection.insertInlinePictureFromBase64(base64Svg, Word.InsertLocation.replace);
+            picture = selection.insertInlinePictureFromBase64(base64Png, Word.InsertLocation.replace);
             console.log('WordInserter: Alternative insertion via selection succeeded');
           } catch (altError) {
             console.log('WordInserter: Selection insertion also failed');
@@ -237,6 +242,53 @@ class WordInserter implements DiagramInserter {
       
       customXmlParts.add(xmlContent);
       await context.sync();
+    });
+  }
+  
+  private async convertSvgToPng(svgString: string): Promise<{base64: string, width: number, height: number}> {
+    return new Promise((resolve, reject) => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+        
+        img.onload = () => {
+          try {
+            // Set canvas dimensions to match the image
+            canvas.width = img.naturalWidth || 800;
+            canvas.height = img.naturalHeight || 600;
+            
+            // Fill with white background (Word expects non-transparent images)
+            ctx!.fillStyle = 'white';
+            ctx!.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw the SVG image
+            ctx!.drawImage(img, 0, 0);
+            
+            // Convert to PNG and get base64
+            const base64 = canvas.toDataURL('image/png').split(',')[1];
+            
+            resolve({
+              base64,
+              width: canvas.width,
+              height: canvas.height
+            });
+          } catch (canvasError) {
+            reject(new Error(`Canvas processing failed: ${canvasError}`));
+          }
+        };
+        
+        img.onerror = () => {
+          reject(new Error('Failed to load SVG as image'));
+        };
+        
+        // Create data URL for the SVG
+        const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+        img.src = svgDataUrl;
+        
+      } catch (error) {
+        reject(new Error(`SVG to PNG conversion setup failed: ${error}`));
+      }
     });
   }
 }
