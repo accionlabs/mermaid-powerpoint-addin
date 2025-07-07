@@ -1,11 +1,160 @@
-/* global Office, PowerPoint */
+/* global Office, PowerPoint, Word */
 
 // Check if we're running in Office context
 const isOfficeContext = typeof Office !== 'undefined';
 
+// Platform detection
+export enum OfficePlatform {
+  PowerPoint = 'PowerPoint',
+  Word = 'Word',
+  Unknown = 'Unknown'
+}
+
+export function detectOfficePlatform(): OfficePlatform {
+  if (!isOfficeContext) return OfficePlatform.Unknown;
+  
+  const host = Office.context.host;
+  switch (host) {
+    case Office.HostType.PowerPoint:
+      return OfficePlatform.PowerPoint;
+    case Office.HostType.Word:
+      return OfficePlatform.Word;
+    default:
+      return OfficePlatform.Unknown;
+  }
+}
+
+export function checkWordApiSupport(): boolean {
+  return Office.context.requirements.isSetSupported('WordApi', '1.1');
+}
+
+export function checkPowerPointApiSupport(): boolean {
+  return Office.context.requirements.isSetSupported('PowerPointApi', '1.1');
+}
+
+// Generate unique ID for diagrams
+export function generateId(): string {
+  return 'mermaid-' + Math.random().toString(36).substr(2, 9);
+}
+
 export interface DiagramData {
   id: string;
   code: string;
+}
+
+// Abstract diagram insertion interface
+export interface DiagramInserter {
+  insertDiagram(mermaidCode: string, svgContent: string): Promise<void>;
+  updateDiagram(diagramId: string, mermaidCode: string, svgContent: string): Promise<void>;
+  getSelectedDiagram(): Promise<DiagramData | null>;
+  listStoredDiagrams(): Promise<string>;
+  getSelectedShapeInfo(): Promise<string>;
+}
+
+// PowerPoint implementation
+class PowerPointInserter implements DiagramInserter {
+  async insertDiagram(mermaidCode: string, svgContent: string): Promise<void> {
+    return insertDiagram(mermaidCode, svgContent);
+  }
+  
+  async updateDiagram(diagramId: string, mermaidCode: string, svgContent: string): Promise<void> {
+    return updateDiagram(diagramId, mermaidCode, svgContent);
+  }
+  
+  async getSelectedDiagram(): Promise<DiagramData | null> {
+    return getSelectedDiagram();
+  }
+  
+  async listStoredDiagrams(): Promise<string> {
+    return listAllStoredDiagrams();
+  }
+  
+  async getSelectedShapeInfo(): Promise<string> {
+    return getSelectedShapeInfo();
+  }
+}
+
+// Word implementation
+class WordInserter implements DiagramInserter {
+  async insertDiagram(mermaidCode: string, svgContent: string): Promise<void> {
+    if (!checkWordApiSupport()) {
+      throw new Error('Word API not supported. Please use a newer version of Word.');
+    }
+    
+    await Word.run(async (context) => {
+      try {
+        // Convert SVG to base64
+        const base64Svg = btoa(svgContent);
+        
+        // Insert the SVG as an inline picture
+        const picture = context.document.body.insertInlinePictureFromBase64(
+          base64Svg, 
+          Word.InsertLocation.end
+        );
+        
+        // Add some spacing after the diagram
+        picture.insertParagraph('', Word.InsertLocation.after);
+        
+        // Store diagram metadata
+        const diagramId = generateId();
+        await this.storeDiagramMetadata(diagramId, mermaidCode);
+        
+        await context.sync();
+      } catch (error) {
+        console.error('Word diagram insertion failed:', error);
+        throw new Error(`Failed to insert diagram in Word: ${error}`);
+      }
+    });
+  }
+  
+  async updateDiagram(diagramId: string, mermaidCode: string, svgContent: string): Promise<void> {
+    throw new Error('Word diagram editing not yet implemented');
+  }
+  
+  async getSelectedDiagram(): Promise<DiagramData | null> {
+    // For now, return null - Word editing to be implemented later
+    return null;
+  }
+  
+  async listStoredDiagrams(): Promise<string> {
+    return 'Word diagram listing not yet implemented';
+  }
+  
+  async getSelectedShapeInfo(): Promise<string> {
+    return 'Word does not have shape selection like PowerPoint';
+  }
+  
+  private async storeDiagramMetadata(diagramId: string, mermaidCode: string): Promise<void> {
+    await Word.run(async (context) => {
+      const customXmlParts = context.document.customXmlParts;
+      customXmlParts.load('items');
+      
+      const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+        <MermaidDiagram>
+          <Id>${diagramId}</Id>
+          <Code><![CDATA[${mermaidCode}]]></Code>
+          <CreatedAt>${new Date().toISOString()}</CreatedAt>
+        </MermaidDiagram>
+      `;
+      
+      customXmlParts.add(xmlContent);
+      await context.sync();
+    });
+  }
+}
+
+// Factory function to get the appropriate inserter
+export function createDiagramInserter(): DiagramInserter {
+  const platform = detectOfficePlatform();
+  
+  switch (platform) {
+    case OfficePlatform.PowerPoint:
+      return new PowerPointInserter();
+    case OfficePlatform.Word:
+      return new WordInserter();
+    default:
+      throw new Error(`Unsupported platform: ${platform}`);
+  }
 }
 
 export interface MermaidSettings {
