@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import mermaid from 'mermaid';
-import { insertDiagram, updateDiagram, getSelectedDiagram, listAllStoredDiagrams, getSelectedShapeInfo, testDiagramStorage, checkOfficeContext, loadSettings, saveSettings, MermaidSettings, defaultSettings } from '../utils/powerPointUtils';
+import { insertDiagram, updateDiagram, getSelectedDiagram, listAllStoredDiagrams, getSelectedShapeInfo, testDiagramStorage, checkOfficeContext, loadSettings, saveSettings, MermaidSettings, defaultSettings, createDiagramInserter, detectOfficePlatform, OfficePlatform } from '../utils/powerPointUtils';
 import Settings from './Settings';
 
 /* global Office */
@@ -25,6 +25,8 @@ const MermaidEditor: React.FC = () => {
   const [showDebugMode, setShowDebugMode] = useState(false);
   const [settings, setSettings] = useState<MermaidSettings>(defaultSettings);
   const [showSettings, setShowSettings] = useState(false);
+  const [currentPlatform, setCurrentPlatform] = useState<OfficePlatform>(OfficePlatform.Unknown);
+  const [diagramInserter, setDiagramInserter] = useState<any>(null);
 
   useEffect(() => {
     initializeMermaidAndSettings();
@@ -37,6 +39,15 @@ const MermaidEditor: React.FC = () => {
 
   const initializeMermaidAndSettings = async () => {
     try {
+      // Detect platform and create appropriate inserter
+      const platform = detectOfficePlatform();
+      setCurrentPlatform(platform);
+      
+      if (platform !== OfficePlatform.Unknown) {
+        const inserter = createDiagramInserter();
+        setDiagramInserter(inserter);
+      }
+      
       // Load saved settings
       const loadedSettings = await loadSettings();
       setSettings(loadedSettings);
@@ -44,8 +55,10 @@ const MermaidEditor: React.FC = () => {
       // Initialize mermaid with loaded settings
       applyMermaidSettings(loadedSettings);
       
-      // Check if there's a selected diagram to edit
-      checkSelectedDiagram();
+      // Check if there's a selected diagram to edit (only for PowerPoint for now)
+      if (platform === OfficePlatform.PowerPoint) {
+        checkSelectedDiagram();
+      }
       
       // Initial render
       setTimeout(() => renderMermaid(), 100);
@@ -53,7 +66,9 @@ const MermaidEditor: React.FC = () => {
       console.error('Failed to load settings:', error);
       // Use default settings if loading fails
       applyMermaidSettings(defaultSettings);
-      checkSelectedDiagram();
+      if (currentPlatform === OfficePlatform.PowerPoint) {
+        checkSelectedDiagram();
+      }
       setTimeout(() => renderMermaid(), 100);
     }
   };
@@ -198,21 +213,30 @@ const MermaidEditor: React.FC = () => {
       
       console.log('Starting diagram insertion...');
       
-      if (isEditing && selectedDiagramId) {
+      if (!diagramInserter) {
+        throw new Error('Diagram inserter not initialized. Please refresh the add-in.');
+      }
+      
+      if (isEditing && selectedDiagramId && currentPlatform === OfficePlatform.PowerPoint) {
         console.log('Updating existing diagram:', selectedDiagramId);
-        await updateDiagram(selectedDiagramId, mermaidCode, svgToUse);
+        await diagramInserter.updateDiagram(selectedDiagramId, mermaidCode, svgToUse);
         setSuccessMessage('Diagram updated successfully!');
         // Keep the current state - don't reset after update
         setError('');
       } else {
         console.log('Inserting new diagram...');
-        await insertDiagram(mermaidCode, svgToUse);
-        setSuccessMessage('Diagram inserted successfully!');
-        // Only reset after inserting a new diagram
-        setIsEditing(false);
-        setSelectedDiagramId(null);
-        setMermaidCode(defaultMermaidCode);
-        setSvgContent('');
+        await diagramInserter.insertDiagram(mermaidCode, svgToUse);
+        
+        const platformName = currentPlatform === OfficePlatform.Word ? 'document' : 'slide';
+        setSuccessMessage(`Diagram inserted into ${platformName} successfully!`);
+        
+        // Only reset after inserting a new diagram (and not editing in Word)
+        if (currentPlatform === OfficePlatform.PowerPoint) {
+          setIsEditing(false);
+          setSelectedDiagramId(null);
+          setMermaidCode(defaultMermaidCode);
+          setSvgContent('');
+        }
         setError('');
       }
       
@@ -256,17 +280,21 @@ const MermaidEditor: React.FC = () => {
     setError('');
     setSuccessMessage('');
     try {
-      const diagramData = await getSelectedDiagram();
-      if (diagramData) {
-        setMermaidCode(diagramData.code);
-        setSelectedDiagramId(diagramData.id);
-        setIsEditing(true);
-        setSuccessMessage('Diagram loaded for editing! Modify the code and click "Update Preview", then "Update Diagram".');
-        setTimeout(() => setSuccessMessage(''), 8000);
-        // Auto-refresh preview when loading for editing
-        setTimeout(() => renderMermaid(), 100);
+      if (diagramInserter) {
+        const diagramData = await diagramInserter.getSelectedDiagram();
+        if (diagramData) {
+          setMermaidCode(diagramData.code);
+          setSelectedDiagramId(diagramData.id);
+          setIsEditing(true);
+          setSuccessMessage('Diagram loaded for editing! Modify the code and click "Update Preview", then "Update Diagram".');
+          setTimeout(() => setSuccessMessage(''), 8000);
+          // Auto-refresh preview when loading for editing
+          setTimeout(() => renderMermaid(), 100);
+        } else {
+          setError('No editable mermaid diagram selected. Please select a diagram that was inserted using this add-in. If you just inserted a diagram, wait a moment and try again (the metadata may still be processing).');
+        }
       } else {
-        setError('No editable mermaid diagram selected. Please select a diagram that was inserted using this add-in. If you just inserted a diagram, wait a moment and try again (the metadata may still be processing).');
+        setError('Diagram inserter not available');
       }
     } catch (error) {
       setError('Failed to load selected diagram. Only diagrams with stored metadata can be edited. For clipboard-inserted images, please create a new diagram.');
@@ -312,10 +340,14 @@ const MermaidEditor: React.FC = () => {
     setSuccessMessage('');
     setDebugInfo('');
     try {
-      const debugOutput = await listAllStoredDiagrams();
-      setDebugInfo(debugOutput);
-      setSuccessMessage('Debug info displayed below');
-      setTimeout(() => setSuccessMessage(''), 3000);
+      if (diagramInserter) {
+        const debugOutput = await diagramInserter.listStoredDiagrams();
+        setDebugInfo(debugOutput);
+        setSuccessMessage('Debug info displayed below');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        setError('Diagram inserter not available');
+      }
     } catch (error) {
       setError('Failed to list stored diagrams');
     }
@@ -326,10 +358,14 @@ const MermaidEditor: React.FC = () => {
     setSuccessMessage('');
     setDebugInfo('');
     try {
-      const debugOutput = await getSelectedShapeInfo();
-      setDebugInfo(debugOutput);
-      setSuccessMessage('Debug info displayed below');
-      setTimeout(() => setSuccessMessage(''), 3000);
+      if (diagramInserter) {
+        const debugOutput = await diagramInserter.getSelectedShapeInfo();
+        setDebugInfo(debugOutput);
+        setSuccessMessage('Debug info displayed below');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        setError('Diagram inserter not available');
+      }
     } catch (error) {
       setError('Failed to get selected shape info');
     }
@@ -389,7 +425,7 @@ const MermaidEditor: React.FC = () => {
       {/* Header Section */}
       <div style={{ marginBottom: '15px' }}>
         <h2 style={{ margin: '0 0 15px 0', fontSize: '18px', textAlign: 'center' }}>
-          {isEditing ? 'Edit Mermaid Diagram' : 'Insert Mermaid Diagram'}
+          {isEditing ? 'Edit Mermaid Diagram' : `Insert Mermaid Diagram${currentPlatform !== OfficePlatform.Unknown ? ` - ${currentPlatform}` : ''}`}
         </h2>
         
         {/* Main Action Buttons Row */}
@@ -414,25 +450,27 @@ const MermaidEditor: React.FC = () => {
             ✨
           </button>
           
-          <button 
-            onClick={handleCheckSelectedDiagram}
-            title="Edit Selected Diagram"
-            style={{
-              padding: '12px 16px',
-              backgroundColor: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              flex: '1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-            📝
-          </button>
+          {currentPlatform === OfficePlatform.PowerPoint && (
+            <button 
+              onClick={handleCheckSelectedDiagram}
+              title="Edit Selected Diagram"
+              style={{
+                padding: '12px 16px',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                flex: '1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+              📝
+            </button>
+          )}
 
           <button 
             onClick={handleOpenSettings}
@@ -626,7 +664,7 @@ const MermaidEditor: React.FC = () => {
 
           <button
             onClick={handleInsert}
-            title={isEditing ? 'Update Diagram (auto-generates preview if needed)' : 'Insert Diagram (auto-generates preview if needed)'}
+            title={isEditing ? 'Update Diagram (auto-generates preview if needed)' : `Insert into ${currentPlatform === OfficePlatform.Word ? 'Document' : 'Slide'} (auto-generates preview if needed)`}
             style={{
               padding: '12px 16px',
               backgroundColor: '#0078d4',
