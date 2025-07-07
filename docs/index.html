@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mermaid PowerPoint Add-in</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .manifest-link {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .manifest-url {
+            font-family: monospace;
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 3px;
+            word-break: break-all;
+        }
+        .features {
+            margin: 20px 0;
+        }
+        .feature {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧜‍♀️ Mermaid PowerPoint Add-in</h1>
+        <p>Create and insert Mermaid diagrams directly into PowerPoint and Word documents</p>
+    </div>
+
+    <div class="status">
+        <strong>✅ Add-in is Live!</strong><br>
+        The Mermaid PowerPoint Add-in is successfully deployed and ready to use.
+    </div>
+
+    <div class="manifest-link">
+        <h3>📋 Installation</h3>
+        <p>To install this add-in in PowerPoint or Word:</p>
+        <ol>
+            <li>Open PowerPoint or Word</li>
+            <li>Go to <strong>Insert</strong> → <strong>Get Add-ins</strong></li>
+            <li>Click <strong>Upload My Add-in</strong></li>
+            <li>Select <strong>Browse</strong> and upload the manifest file, or use this URL:</li>
+        </ol>
+        <div class="manifest-url">
+            https://accionlabs.github.io/mermaid-powerpoint-addin/manifest.xml
+        </div>
+    </div>
+
+    <div class="features">
+        <h3>🚀 Features</h3>
+        <div class="feature">
+            <strong>✨ Dual Platform Support</strong><br>
+            Works with both PowerPoint and Word documents
+        </div>
+        <div class="feature">
+            <strong>🎨 Customizable Themes</strong><br>
+            Support for multiple themes and custom colors
+        </div>
+        <div class="feature">
+            <strong>📝 Diagram Types</strong><br>
+            Flowcharts, sequence diagrams, timelines, mindmaps, and more
+        </div>
+        <div class="feature">
+            <strong>🔄 Edit Existing Diagrams</strong><br>
+            Edit previously inserted diagrams (PowerPoint only)
+        </div>
+        <div class="feature">
+            <strong>🖼️ Format Compatibility</strong><br>
+            Automatic SVG to PNG conversion for Word compatibility
+        </div>
+    </div>
+
+    <div class="status">
+        <strong>🆕 Latest Updates:</strong><br>
+        • Fixed Word insertion issues with SVG to PNG conversion<br>
+        • Added comprehensive error handling and logging<br>
+        • Improved dual-platform compatibility<br>
+        • Enhanced mindmap and timeline support
+    </div>
+
+    <div style="text-align: center; margin-top: 40px; color: #666;">
+        <p>Powered by <a href="https://mermaid.js.org/">Mermaid.js</a> | Built with Office.js</p>
+    </div>
+</body>
+</html>
