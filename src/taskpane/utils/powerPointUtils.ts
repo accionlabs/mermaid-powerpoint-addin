@@ -144,36 +144,12 @@ class WordInserter implements DiagramInserter {
       return;
     }
     
-    console.log('WordInserter: Document selection changed during insertion mode');
+    console.log('WordInserter: Document selection changed during insertion mode - cursor positioned');
     console.log('WordInserter: Event args:', eventArgs);
     
-    try {
-      // Small delay to ensure selection is stable
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Insert at current selection immediately
-      await this.performActualInsertion(this.pendingInsertion.mermaidCode, this.pendingInsertion.svgContent);
-      
-      // Exit insertion mode
-      await this.exitInsertionMode();
-      
-      console.log('WordInserter: Diagram inserted successfully via selection change');
-      
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('INSERTION_COMPLETE:')) {
-        console.log('WordInserter: Insertion completed successfully');
-        await this.exitInsertionMode();
-        
-        // Notify UI that insertion is complete
-        if (this.onInsertionComplete) {
-          this.onInsertionComplete();
-        }
-      } else {
-        console.error('WordInserter: Failed to insert during selection change:', error);
-        await this.exitInsertionMode();
-        throw error;
-      }
-    }
+    // Don't insert automatically - just log that the user has positioned their cursor
+    // The actual insertion will happen when they click "Insert Here"
+    console.log('WordInserter: User positioned cursor, waiting for "Insert Here" button click');
   }
   
   // Method to insert at current cursor position when user is ready
@@ -191,11 +167,23 @@ class WordInserter implements DiagramInserter {
       // Exit insertion mode
       await this.exitInsertionMode();
       
+      // Notify UI that insertion is complete
+      if (this.onInsertionComplete) {
+        this.onInsertionComplete();
+      }
+      
+      console.log('WordInserter: Diagram inserted successfully');
+      
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('INSERTION_COMPLETE:')) {
         console.log('WordInserter: Insertion completed successfully');
         // Exit insertion mode on successful completion
         await this.exitInsertionMode();
+        
+        // Notify UI that insertion is complete
+        if (this.onInsertionComplete) {
+          this.onInsertionComplete();
+        }
         return;
       } else {
         console.error('WordInserter: Failed to insert:', error);
