@@ -62,6 +62,9 @@ export interface DiagramInserter {
   getSelectedDiagram(): Promise<DiagramData | null>;
   listStoredDiagrams(): Promise<string>;
   getSelectedShapeInfo(): Promise<string>;
+  captureCursorPosition?(): Promise<void>; // Optional method for Word (legacy)
+  exitInsertionMode?(): Promise<void>; // Optional method for Word
+  insertAtCurrentPosition?(): Promise<void>; // Optional method for Word
 }
 
 // PowerPoint implementation
@@ -89,8 +92,212 @@ class PowerPointInserter implements DiagramInserter {
 
 // Word implementation
 class WordInserter implements DiagramInserter {
+  private insertionMode: boolean = false;
+  private pendingInsertion: {mermaidCode: string, svgContent: string} | null = null;
+  private selectionChangedHandler: any = null;
+  private onInsertionComplete: (() => void) | null = null;
+  
+  // Set callback for when insertion completes
+  setInsertionCompleteCallback(callback: () => void): void {
+    this.onInsertionComplete = callback;
+  }
+  
+  // Enter insertion mode - prepare for user to click where they want the diagram
+  async enterInsertionMode(mermaidCode: string, svgContent: string): Promise<void> {
+    console.log('WordInserter: Entering insertion mode');
+    
+    this.insertionMode = true;
+    this.pendingInsertion = { mermaidCode, svgContent };
+    
+    // Set up Office document selection change event handler
+    try {
+      console.log('WordInserter: Setting up DocumentSelectionChanged event handler');
+      
+      // Use Office.context.document.addHandlerAsync to listen for selection changes
+      const addHandlerResult = await new Promise<boolean>((resolve, reject) => {
+        Office.context.document.addHandlerAsync(
+          Office.EventType.DocumentSelectionChanged,
+          this.handleDocumentSelectionChanged.bind(this),
+          (result) => {
+            if (result.status === Office.AsyncResultStatus.Succeeded) {
+              console.log('WordInserter: DocumentSelectionChanged handler added successfully');
+              resolve(true);
+            } else {
+              console.error('WordInserter: Failed to add DocumentSelectionChanged handler:', result.error);
+              reject(new Error(result.error.message));
+            }
+          }
+        );
+      });
+      
+      console.log('WordInserter: Insertion mode active - waiting for user click');
+      
+    } catch (error) {
+      console.error('WordInserter: Could not set up selection change handler:', error);
+      throw new Error('Could not enter insertion mode');
+    }
+  }
+  
+  // Handle Office document selection changed event
+  private async handleDocumentSelectionChanged(eventArgs: any): Promise<void> {
+    if (!this.insertionMode || !this.pendingInsertion) {
+      return;
+    }
+    
+    console.log('WordInserter: Document selection changed during insertion mode');
+    console.log('WordInserter: Event args:', eventArgs);
+    
+    try {
+      // Small delay to ensure selection is stable
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Insert at current selection immediately
+      await this.performActualInsertion(this.pendingInsertion.mermaidCode, this.pendingInsertion.svgContent);
+      
+      // Exit insertion mode
+      await this.exitInsertionMode();
+      
+      console.log('WordInserter: Diagram inserted successfully via selection change');
+      
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('INSERTION_COMPLETE:')) {
+        console.log('WordInserter: Insertion completed successfully');
+        await this.exitInsertionMode();
+        
+        // Notify UI that insertion is complete
+        if (this.onInsertionComplete) {
+          this.onInsertionComplete();
+        }
+      } else {
+        console.error('WordInserter: Failed to insert during selection change:', error);
+        await this.exitInsertionMode();
+        throw error;
+      }
+    }
+  }
+  
+  // Method to insert at current cursor position when user is ready
+  async insertAtCurrentPosition(): Promise<void> {
+    if (!this.insertionMode || !this.pendingInsertion) {
+      throw new Error('Not in insertion mode');
+    }
+    
+    console.log('WordInserter: Inserting diagram at current cursor position');
+    
+    try {
+      // Perform insertion at current location
+      await this.performActualInsertion(this.pendingInsertion.mermaidCode, this.pendingInsertion.svgContent);
+      
+      // Exit insertion mode
+      await this.exitInsertionMode();
+      
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('INSERTION_COMPLETE:')) {
+        console.log('WordInserter: Insertion completed successfully');
+        // Exit insertion mode on successful completion
+        await this.exitInsertionMode();
+        return;
+      } else {
+        console.error('WordInserter: Failed to insert:', error);
+        await this.exitInsertionMode();
+        throw error;
+      }
+    }
+  }
+  
+  // Exit insertion mode and clean up
+  async exitInsertionMode(): Promise<void> {
+    console.log('WordInserter: Exiting insertion mode');
+    
+    this.insertionMode = false;
+    this.pendingInsertion = null;
+    
+    // Clean up Office event handler
+    try {
+      console.log('WordInserter: Removing DocumentSelectionChanged event handler');
+      
+      await new Promise<void>((resolve, reject) => {
+        Office.context.document.removeHandlerAsync(
+          Office.EventType.DocumentSelectionChanged,
+          (result) => {
+            if (result.status === Office.AsyncResultStatus.Succeeded) {
+              console.log('WordInserter: DocumentSelectionChanged handler removed successfully');
+              resolve();
+            } else {
+              console.log('WordInserter: Could not remove DocumentSelectionChanged handler (non-critical):', result.error);
+              resolve(); // Don't reject - this is non-critical
+            }
+          }
+        );
+      });
+      
+    } catch (error) {
+      console.log('WordInserter: Could not remove selection handler (non-critical):', error);
+    }
+  }
+  
+  // Perform the actual insertion at current cursor position
+  private async performActualInsertion(mermaidCode: string, svgContent: string): Promise<void> {
+    await Word.run(async (context) => {
+      // Get current selection (where user just clicked)
+      const selection = context.document.getSelection();
+      selection.load('text');
+      await context.sync();
+      
+      console.log('WordInserter: Inserting at user-selected position');
+      
+      // Generate optimal PNG as before
+      const pageDimensions = await this.getDocumentPageDimensions();
+      const svgDimensions = this.parseSvgViewBox(svgContent);
+      let svgWidth = svgDimensions.width > 0 ? svgDimensions.width : 800;
+      let svgHeight = svgDimensions.height > 0 ? svgDimensions.height : 600;
+      
+      const optimalSize = this.calculateOptimalDiagramSize(
+        svgWidth, svgHeight, 
+        pageDimensions.pageWidth, pageDimensions.pageHeight,
+        pageDimensions.marginLeft, pageDimensions.marginRight,
+        pageDimensions.marginTop, pageDimensions.marginBottom
+      );
+      
+      const pngData = await this.convertSvgToPngForWord(svgContent, optimalSize.width, optimalSize.height);
+      
+      // Insert at current selection
+      let picture;
+      if (selection.text && selection.text.length > 0) {
+        console.log('WordInserter: Text selected, inserting after selection');
+        picture = selection.insertInlinePictureFromBase64(pngData.base64, Word.InsertLocation.after);
+      } else {
+        console.log('WordInserter: No text selected, inserting at cursor');
+        picture = selection.insertInlinePictureFromBase64(pngData.base64, Word.InsertLocation.replace);
+      }
+      
+      // Set optimal size
+      picture.width = optimalSize.width;
+      picture.height = optimalSize.height;
+      
+      // Add spacing and metadata as before
+      picture.insertParagraph('', Word.InsertLocation.after);
+      
+      const diagramId = generateId();
+      picture.altTextDescription = `MERMAID_ID:${diagramId}`;
+      
+      await this.storeDiagramMetadata(diagramId, mermaidCode);
+      await context.sync();
+      
+      console.log('WordInserter: Diagram inserted successfully at user-chosen location');
+      
+      // Signal successful insertion to UI (will be caught as success message)
+      throw new Error('INSERTION_COMPLETE: Diagram inserted successfully at your chosen location!');
+    });
+  }
+  
+  // Legacy capture method (now unused but keeping for compatibility)
+  async captureCursorPosition(): Promise<void> {
+    console.log('WordInserter: captureCursorPosition called (legacy method)');
+  }
+
   async insertDiagram(mermaidCode: string, svgContent: string): Promise<void> {
-    console.log('WordInserter: Starting diagram insertion');
+    console.log('WordInserter: Starting two-step diagram insertion');
     console.log('WordInserter: SVG content length:', svgContent.length);
     
     if (!checkWordApiSupport()) {
@@ -99,187 +306,419 @@ class WordInserter implements DiagramInserter {
     
     console.log('WordInserter: Word API support confirmed');
     
+    // Validate SVG content
+    if (!svgContent || svgContent.trim().length === 0) {
+      throw new Error('SVG content is empty or invalid');
+    }
+    
+    if (!svgContent.includes('<svg')) {
+      throw new Error('Content does not appear to be valid SVG');
+    }
+    
+    console.log('WordInserter: SVG validation passed');
+    
+    // Enter insertion mode instead of immediate insertion
+    try {
+      await this.enterInsertionMode(mermaidCode, svgContent);
+      
+      // Throw special success message to indicate mode change
+      throw new Error('SUCCESS: Click in your document where you want the diagram to be inserted.');
+      
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('SUCCESS:')) {
+        throw error; // Re-throw success messages
+      }
+      console.error('WordInserter: Failed to enter insertion mode:', error);
+      throw new Error(`Failed to prepare insertion: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  async updateDiagram(diagramId: string, mermaidCode: string, svgContent: string): Promise<void> {
+    console.log('WordInserter: Updating diagram with ID:', diagramId);
+    
     await Word.run(async (context) => {
       try {
-        console.log('WordInserter: Entered Word.run context');
+        // First, find and delete the old diagram image
+        const inlinePictures = context.document.body.inlinePictures;
+        inlinePictures.load(['items']);
+        await context.sync();
         
-        // Validate SVG content
-        if (!svgContent || svgContent.trim().length === 0) {
-          throw new Error('SVG content is empty or invalid');
-        }
+        // Find the picture associated with this diagram ID by checking custom XML parts
+        const customXmlParts = context.document.customXmlParts;
+        customXmlParts.load('items');
+        await context.sync();
         
-        if (!svgContent.includes('<svg')) {
-          throw new Error('Content does not appear to be valid SVG');
-        }
-        
-        console.log('WordInserter: SVG validation passed');
-        
-        // Word doesn't support SVG directly via insertInlinePictureFromBase64
-        // Convert SVG to PNG first
-        console.log('WordInserter: Converting SVG to PNG for Word compatibility');
-        
-        let base64Png;
-        try {
-          const pngData = await this.convertSvgToPng(svgContent);
-          base64Png = pngData.base64;
-          console.log('WordInserter: SVG to PNG conversion successful, size:', pngData.width, 'x', pngData.height);
-          console.log('WordInserter: PNG base64 length:', base64Png.length);
-        } catch (conversionError) {
-          console.error('WordInserter: SVG to PNG conversion failed:', conversionError);
-          const errorMessage = conversionError instanceof Error ? conversionError.message : String(conversionError);
-          throw new Error(`Failed to convert SVG to PNG for Word: ${errorMessage}`);
-        }
-        
-        // Insert the SVG as an inline picture
-        console.log('WordInserter: Attempting insertInlinePictureFromBase64');
-        
-        // Try inserting the PNG
-        let picture;
-        try {
-          picture = context.document.body.insertInlinePictureFromBase64(
-            base64Png, 
-            Word.InsertLocation.end
-          );
-        } catch (insertError) {
-          console.log('WordInserter: Direct PNG insertion failed, trying alternative methods');
-          
-          // Alternative 1: Try inserting at current selection instead of body.end
+        let foundDiagram = false;
+        for (let i = 0; i < customXmlParts.items.length; i++) {
+          const part = customXmlParts.items[i];
           try {
-            const selection = context.document.getSelection();
-            picture = selection.insertInlinePictureFromBase64(base64Png, Word.InsertLocation.replace);
-            console.log('WordInserter: Alternative insertion via selection succeeded');
-          } catch (altError) {
-            console.log('WordInserter: Selection insertion also failed');
-            throw insertError; // Throw original error
+            const xml = part.getXml();
+            await context.sync();
+            
+            if (xml.value.includes(`<Id>${diagramId}</Id>`)) {
+              console.log('WordInserter: Found existing diagram metadata for update');
+              foundDiagram = true;
+              
+              // Delete the old XML part
+              part.delete();
+              break;
+            }
+          } catch (error) {
+            // Skip this part if we can't read it
+            continue;
           }
         }
         
-        console.log('WordInserter: Picture insertion command queued');
+        if (!foundDiagram) {
+          throw new Error(`Diagram with ID ${diagramId} not found. It may have been deleted or moved.`);
+        }
         
-        // Load picture properties to verify insertion
-        picture.load(['width', 'height']);
+        // Get document page dimensions for optimal sizing
+        console.log('WordInserter: Getting document page dimensions for update');
+        const pageDimensions = await this.getDocumentPageDimensions();
         
-        // Sync to execute the insertion
-        console.log('WordInserter: Syncing context...');
-        await context.sync();
+        // Parse SVG dimensions
+        console.log('WordInserter: Parsing SVG dimensions for update');
+        const svgDimensions = this.parseSvgViewBox(svgContent);
+        let svgWidth = svgDimensions.width;
+        let svgHeight = svgDimensions.height;
         
-        console.log('WordInserter: Picture inserted successfully, dimensions:', picture.width, 'x', picture.height);
+        // Fallback to default if parsing failed
+        if (svgWidth <= 0 || svgHeight <= 0) {
+          console.log('WordInserter: Could not parse SVG dimensions for update, using defaults');
+          svgWidth = 800;
+          svgHeight = 600;
+        }
         
-        // Add some spacing after the diagram
-        console.log('WordInserter: Adding paragraph spacing');
-        picture.insertParagraph('', Word.InsertLocation.after);
+        // Calculate optimal diagram size for the document
+        console.log('WordInserter: Calculating optimal diagram size for update');
+        const optimalSize = this.calculateOptimalDiagramSize(
+          svgWidth, 
+          svgHeight, 
+          pageDimensions.pageWidth, 
+          pageDimensions.pageHeight,
+          pageDimensions.marginLeft,
+          pageDimensions.marginRight,
+          pageDimensions.marginTop,
+          pageDimensions.marginBottom
+        );
         
-        // Store diagram metadata
-        console.log('WordInserter: Storing diagram metadata');
-        const diagramId = generateId();
+        // Convert SVG to PNG at 300 DPI for the calculated optimal size
+        console.log('WordInserter: Converting SVG to PNG at 300 DPI for update');
+        const pngWithWhiteBackground = await this.convertSvgToPngForWord(svgContent, optimalSize.width, optimalSize.height);
+        
+        // Insert the new diagram at the current selection or end of document
+        let picture;
+        try {
+          const selection = context.document.getSelection();
+          picture = selection.insertInlinePictureFromBase64(
+            pngWithWhiteBackground.base64, 
+            Word.InsertLocation.replace
+          );
+        } catch (selectionError) {
+          // Fallback to end of document if selection fails
+          picture = context.document.body.insertInlinePictureFromBase64(
+            pngWithWhiteBackground.base64, 
+            Word.InsertLocation.end
+          );
+        }
+        
+        // Set picture dimensions to the calculated optimal size
+        // The PNG was created at 300 DPI specifically for this display size
+        console.log('WordInserter: Update - resizing picture to optimal calculated size:', optimalSize.width, 'x', optimalSize.height, 'points');
+        console.log('WordInserter: Update - PNG was created at 300 DPI specifically for this size (', pngWithWhiteBackground.width, 'x', pngWithWhiteBackground.height, 'pixels)');
+        picture.width = optimalSize.width;
+        picture.height = optimalSize.height;
+        
+        // Store updated diagram metadata
         await this.storeDiagramMetadata(diagramId, mermaidCode);
         
-        // Final sync
         await context.sync();
-        console.log('WordInserter: Diagram insertion completed successfully');
+        console.log('WordInserter: Diagram updated successfully');
         
       } catch (error) {
-        console.error('WordInserter: Detailed error information:');
-        
-        if (error instanceof Error) {
-          console.error('WordInserter: Error name:', error.name);
-          console.error('WordInserter: Error message:', error.message);
-          console.error('WordInserter: Error stack:', error.stack);
-        } else {
-          console.error('WordInserter: Unknown error type:', error);
-        }
-        
-        if ((error as any).debugInfo) {
-          console.error('WordInserter: Debug info:', JSON.stringify((error as any).debugInfo, null, 2));
-        }
-        
-        // Provide more specific error messages based on error type
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        let userMessage = `Failed to insert diagram in Word: ${errorMessage}`;
-        
-        if (errorMessage && errorMessage.includes('InvalidArgument')) {
-          userMessage = 'The diagram format is not supported by Word. Please try a different diagram type.';
-        } else if (errorMessage && errorMessage.includes('GeneralException')) {
-          userMessage = 'Word encountered an issue inserting the diagram. This may be due to API limitations or document permissions.';
-        } else if (errorMessage && errorMessage.includes('AccessDenied')) {
-          userMessage = 'Permission denied. Please ensure the document is not protected and try again.';
-        }
-        
-        throw new Error(userMessage);
+        console.error('WordInserter: Update failed:', error);
+        throw new Error(`Failed to update diagram: ${error instanceof Error ? error.message : String(error)}`);
       }
     });
   }
   
-  async updateDiagram(diagramId: string, mermaidCode: string, svgContent: string): Promise<void> {
-    throw new Error('Word diagram editing not yet implemented');
-  }
-  
   async getSelectedDiagram(): Promise<DiagramData | null> {
-    // For now, return null - Word editing to be implemented later
-    return null;
-  }
-  
-  async listStoredDiagrams(): Promise<string> {
-    return 'Word diagram listing not yet implemented';
-  }
-  
-  async getSelectedShapeInfo(): Promise<string> {
-    return 'Word does not have shape selection like PowerPoint';
-  }
-  
-  private async storeDiagramMetadata(diagramId: string, mermaidCode: string): Promise<void> {
-    await Word.run(async (context) => {
-      const customXmlParts = context.document.customXmlParts;
-      customXmlParts.load('items');
-      
-      const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
-        <MermaidDiagram>
-          <Id>${diagramId}</Id>
-          <Code><![CDATA[${mermaidCode}]]></Code>
-          <CreatedAt>${new Date().toISOString()}</CreatedAt>
-        </MermaidDiagram>
-      `;
-      
-      customXmlParts.add(xmlContent);
-      await context.sync();
+    console.log('WordInserter: Getting selected diagram for editing');
+    
+    return await Word.run(async (context) => {
+      try {
+        // Get the current selection to find selected images
+        const selection = context.document.getSelection();
+        const inlinePictures = selection.inlinePictures;
+        inlinePictures.load(['items', 'altTextDescription']);
+        await context.sync();
+        
+        console.log('WordInserter: Found', inlinePictures.items.length, 'selected pictures');
+        
+        if (inlinePictures.items.length === 0) {
+          console.log('WordInserter: No picture selected, cannot edit');
+          return null;
+        }
+        
+        // Get the first selected picture and check its alt text for diagram ID
+        const selectedPicture = inlinePictures.items[0];
+        const altText = selectedPicture.altTextDescription;
+        console.log('WordInserter: Selected picture alt text:', altText);
+        
+        if (!altText || !altText.startsWith('MERMAID_ID:')) {
+          console.log('WordInserter: Selected image is not a Mermaid diagram (no ID in alt text)');
+          return null;
+        }
+        
+        // Extract the diagram ID from alt text
+        const diagramId = altText.substring('MERMAID_ID:'.length);
+        console.log('WordInserter: Found diagram ID in selected image:', diagramId);
+        
+        // Now find the metadata for this specific diagram ID
+        const customXmlParts = context.document.customXmlParts;
+        customXmlParts.load('items');
+        await context.sync();
+        
+        console.log('WordInserter: Searching for metadata with ID:', diagramId);
+        
+        for (let i = 0; i < customXmlParts.items.length; i++) {
+          const part = customXmlParts.items[i];
+          try {
+            const xml = part.getXml();
+            await context.sync();
+            
+            if (xml.value.includes('<MermaidDiagram>') && xml.value.includes(`<Id>${diagramId}</Id>`)) {
+              console.log('WordInserter: Found matching metadata for diagram:', diagramId);
+              console.log('WordInserter: Full XML content:', xml.value);
+              
+              // Check what's actually in the CDATA section
+              const cdataStartIndex = xml.value.indexOf('<![CDATA[');
+              const cdataEndIndex = xml.value.indexOf(']]>');
+              if (cdataStartIndex >= 0 && cdataEndIndex >= 0) {
+                const cdataContent = xml.value.substring(cdataStartIndex + 9, cdataEndIndex);
+                console.log('WordInserter: Raw CDATA content:', JSON.stringify(cdataContent));
+              }
+              
+              // Updated regex to handle newlines and special characters in CDATA
+              const codeMatch = xml.value.match(/<Code><!\[CDATA\[([\s\S]*?)\]\]><\/Code>/);
+              console.log('WordInserter: Code regex result:', codeMatch);
+              
+              if (codeMatch) {
+                console.log('WordInserter: Successfully extracted diagram code:', codeMatch[1].substring(0, 50) + '...');
+                return {
+                  id: diagramId,
+                  code: codeMatch[1]
+                };
+              } else {
+                console.log('WordInserter: Failed to parse diagram code from metadata');
+                // Try alternative regex patterns
+                const altCodeMatch1 = xml.value.match(/<Code>([^<]+)<\/Code>/);
+                const altCodeMatch2 = xml.value.match(/<!\[CDATA\[([^\]]+)\]\]>/);
+                console.log('WordInserter: Alternative regex 1:', altCodeMatch1);
+                console.log('WordInserter: Alternative regex 2:', altCodeMatch2);
+              }
+            }
+          } catch (error) {
+            console.log(`WordInserter: Error reading XML part ${i + 1}:`, error);
+            continue;
+          }
+        }
+        
+        console.log('WordInserter: No metadata found for diagram ID:', diagramId);
+        return null;
+        
+      } catch (error) {
+        console.error('WordInserter: Failed to get selected diagram:', error);
+        return null;
+      }
     });
   }
   
-  private async convertSvgToPng(svgString: string): Promise<{base64: string, width: number, height: number}> {
+  async listStoredDiagrams(): Promise<string> {
+    console.log('WordInserter: Listing stored diagrams');
+    
+    return await Word.run(async (context) => {
+      try {
+        const customXmlParts = context.document.customXmlParts;
+        customXmlParts.load('items');
+        await context.sync();
+        
+        const diagrams: any[] = [];
+        
+        for (let i = 0; i < customXmlParts.items.length; i++) {
+          const part = customXmlParts.items[i];
+          try {
+            const xml = part.getXml();
+            await context.sync();
+            
+            if (xml.value.includes('<MermaidDiagram>')) {
+              const idMatch = xml.value.match(/<Id>([^<]+)<\/Id>/);
+              const createdMatch = xml.value.match(/<CreatedAt>([^<]+)<\/CreatedAt>/);
+              const codeMatch = xml.value.match(/<Code><!\[CDATA\[([^\]]+)\]\]><\/Code>/);
+              
+              if (idMatch && createdMatch && codeMatch) {
+                diagrams.push({
+                  id: idMatch[1],
+                  created: createdMatch[1],
+                  codePreview: codeMatch[1].substring(0, 50) + '...'
+                });
+              }
+            }
+          } catch (error) {
+            // Skip this part if we can't read it
+            continue;
+          }
+        }
+        
+        if (diagrams.length === 0) {
+          return 'No Mermaid diagrams found in this document.';
+        }
+        
+        return `Found ${diagrams.length} Mermaid diagram(s):\n\n` +
+          diagrams.map((d, index) => 
+            `${index + 1}. ID: ${d.id}\n   Created: ${d.created}\n   Code: ${d.codePreview}`
+          ).join('\n\n');
+          
+      } catch (error) {
+        return `Error listing diagrams: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    });
+  }
+  
+  async getSelectedShapeInfo(): Promise<string> {
+    return await Word.run(async (context) => {
+      try {
+        const selection = context.document.getSelection();
+        const inlinePictures = selection.inlinePictures;
+        inlinePictures.load(['items', 'width', 'height']);
+        await context.sync();
+        
+        if (inlinePictures.items.length === 0) {
+          return 'No picture selected in Word.';
+        }
+        
+        const picture = inlinePictures.items[0];
+        return `Selected Word Picture Info:
+- Width: ${picture.width}
+- Height: ${picture.height}
+- Type: Inline Picture
+- Context: Word Document
+
+Note: Word uses inline pictures instead of shapes like PowerPoint.`;
+        
+      } catch (error) {
+        return `Error getting picture info: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    });
+  }
+  
+  private async storeDiagramMetadata(diagramId: string, mermaidCode: string): Promise<void> {
+    console.log('WordInserter: Starting metadata storage for diagram:', diagramId);
+    
+    await Word.run(async (context) => {
+      try {
+        const customXmlParts = context.document.customXmlParts;
+        customXmlParts.load('items');
+        await context.sync();
+        
+        console.log('WordInserter: Loaded custom XML parts, current count:', customXmlParts.items.length);
+        
+        const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<MermaidDiagram>
+  <Id>${diagramId}</Id>
+  <Code><![CDATA[${mermaidCode}]]></Code>
+  <CreatedAt>${new Date().toISOString()}</CreatedAt>
+</MermaidDiagram>`;
+        
+        console.log('WordInserter: Adding XML content (full):', xmlContent);
+        
+        const newPart = customXmlParts.add(xmlContent);
+        await context.sync();
+        
+        // Verify the part was added
+        customXmlParts.load('items');
+        await context.sync();
+        console.log('WordInserter: Metadata stored successfully. New XML parts count:', customXmlParts.items.length);
+        
+      } catch (error) {
+        console.error('WordInserter: Failed to store metadata:', error);
+        throw error;
+      }
+    });
+  }
+  
+  private async convertSvgToPngForWord(svgString: string, targetDisplayWidth: number, targetDisplayHeight: number): Promise<{base64: string, width: number, height: number}> {
     return new Promise((resolve, reject) => {
       try {
+        console.log('WordInserter: Starting SVG to PNG conversion for Word');
+        console.log('WordInserter: Target display dimensions:', targetDisplayWidth, 'x', targetDisplayHeight, 'points');
+        
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         const img = new Image();
         
         img.onload = () => {
           try {
-            // Set canvas dimensions to match the image
-            canvas.width = img.naturalWidth || 800;
-            canvas.height = img.naturalHeight || 600;
+            // Parse viewBox from SVG string for accurate dimensions
+            const viewBoxDimensions = this.parseSvgViewBox(svgString);
+            console.log('WordInserter: SVG viewBox dimensions:', viewBoxDimensions);
+            console.log('WordInserter: Natural image dimensions:', img.naturalWidth, 'x', img.naturalHeight);
+            
+            // ALWAYS prefer viewBox dimensions over natural dimensions for accuracy
+            let svgWidth, svgHeight;
+            if (viewBoxDimensions.width > 0 && viewBoxDimensions.height > 0) {
+              svgWidth = viewBoxDimensions.width;
+              svgHeight = viewBoxDimensions.height;
+              console.log('WordInserter: Using viewBox dimensions:', svgWidth, 'x', svgHeight);
+            } else {
+              svgWidth = img.naturalWidth || 800;
+              svgHeight = img.naturalHeight || 600;
+              console.log('WordInserter: Fallback to natural/default dimensions:', svgWidth, 'x', svgHeight);
+            }
+            
+            // Calculate 300 DPI pixel dimensions for target display size
+            // 300 DPI = 300 pixels per inch = 4.167 pixels per point (72 points per inch)
+            const pixelsPerPoint = 300 / 72; // 4.167 pixels per point at 300 DPI
+            const canvasWidth = Math.round(targetDisplayWidth * pixelsPerPoint);
+            const canvasHeight = Math.round(targetDisplayHeight * pixelsPerPoint);
+            
+            console.log('WordInserter: Creating 300 DPI canvas:', canvasWidth, 'x', canvasHeight, 'pixels');
+            
+            // Set canvas to 300 DPI resolution for target display size
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            
+            // Enable high-quality rendering
+            ctx!.imageSmoothingEnabled = true;
+            ctx!.imageSmoothingQuality = 'high';
             
             // Fill with white background (Word expects non-transparent images)
             ctx!.fillStyle = 'white';
-            ctx!.fillRect(0, 0, canvas.width, canvas.height);
+            ctx!.fillRect(0, 0, canvasWidth, canvasHeight);
             
-            // Draw the SVG image
-            ctx!.drawImage(img, 0, 0);
+            // Draw the SVG scaled to fill the canvas exactly
+            ctx!.drawImage(img, 0, 0, canvasWidth, canvasHeight);
             
-            // Convert to PNG and get base64
-            const base64 = canvas.toDataURL('image/png').split(',')[1];
+            // Convert to PNG with maximum quality
+            const base64 = canvas.toDataURL('image/png', 1.0).split(',')[1];
+            
+            console.log('WordInserter: 300 DPI PNG created:', canvasWidth, 'x', canvasHeight, 'pixels for', targetDisplayWidth, 'x', targetDisplayHeight, 'points display');
             
             resolve({
               base64,
-              width: canvas.width,
-              height: canvas.height
+              width: canvasWidth,
+              height: canvasHeight
             });
           } catch (canvasError) {
+            console.error('WordInserter: Canvas processing failed:', canvasError);
             reject(new Error(`Canvas processing failed: ${canvasError}`));
           }
         };
         
         img.onerror = () => {
-          reject(new Error('Failed to load SVG as image'));
+          console.error('WordInserter: Failed to load SVG');
+          reject(new Error('Failed to load SVG image'));
         };
         
         // Create data URL for the SVG
@@ -287,9 +726,131 @@ class WordInserter implements DiagramInserter {
         img.src = svgDataUrl;
         
       } catch (error) {
-        reject(new Error(`SVG to PNG conversion setup failed: ${error}`));
+        console.error('WordInserter: SVG conversion setup failed:', error);
+        reject(new Error(`SVG conversion setup failed: ${error}`));
       }
     });
+  }
+  
+  private async getDocumentPageDimensions(): Promise<{pageWidth: number, pageHeight: number, marginLeft: number, marginRight: number, marginTop: number, marginBottom: number}> {
+    return await Word.run(async (context) => {
+      try {
+        // Try to get page setup information from the document
+        // Use default values since Word API doesn't expose section page dimensions in the same way
+        console.log('WordInserter: Using default Letter size with 1" margins');
+        console.log('WordInserter: Page dimensions (points): 612 x 792');
+        console.log('WordInserter: Margins (points) - L: 72, R: 72, T: 72, B: 72');
+        
+        // Default to US Letter size (8.5" x 11" = 612 x 792 points) with 1" margins
+        // This covers the majority of documents and provides good sizing
+        return {
+          pageWidth: 612,
+          pageHeight: 792,
+          marginLeft: 72,
+          marginRight: 72,
+          marginTop: 72,
+          marginBottom: 72
+        };
+      } catch (error) {
+        console.log('WordInserter: Could not get page dimensions, using defaults:', error);
+        // Fallback to US Letter size with 1" margins
+        return {
+          pageWidth: 612,
+          pageHeight: 792,
+          marginLeft: 72,
+          marginRight: 72,
+          marginTop: 72,
+          marginBottom: 72
+        };
+      }
+    });
+  }
+  
+  private calculateOptimalDiagramSize(svgWidth: number, svgHeight: number, pageWidth: number, pageHeight: number, marginLeft: number, marginRight: number, marginTop: number, marginBottom: number): {width: number, height: number} {
+    // Calculate available space (subtract margins)
+    const availableWidth = pageWidth - marginLeft - marginRight;
+    const availableHeight = pageHeight - marginTop - marginBottom;
+    
+    console.log('WordInserter: Available space:', availableWidth, 'x', availableHeight, 'points');
+    console.log('WordInserter: SVG aspect ratio:', svgWidth, 'x', svgHeight);
+    
+    // Calculate aspect ratio
+    const svgAspectRatio = svgWidth / svgHeight;
+    const availableAspectRatio = availableWidth / availableHeight;
+    
+    let targetWidth, targetHeight;
+    
+    if (svgAspectRatio > availableAspectRatio) {
+      // SVG is wider relative to available space - fit to width
+      targetWidth = availableWidth;
+      targetHeight = targetWidth / svgAspectRatio;
+      console.log('WordInserter: Fitting to width');
+    } else {
+      // SVG is taller relative to available space - fit to height
+      targetHeight = availableHeight;
+      targetWidth = targetHeight * svgAspectRatio;
+      console.log('WordInserter: Fitting to height');
+    }
+    
+    // Ensure minimum size (at least 2 inches wide or tall)
+    const minSize = 144; // 2 inches = 144 points
+    if (targetWidth < minSize && targetHeight < minSize) {
+      if (svgAspectRatio > 1) {
+        targetWidth = minSize;
+        targetHeight = minSize / svgAspectRatio;
+      } else {
+        targetHeight = minSize;
+        targetWidth = minSize * svgAspectRatio;
+      }
+      console.log('WordInserter: Applied minimum size constraint');
+    }
+    
+    console.log('WordInserter: Calculated optimal size:', targetWidth, 'x', targetHeight, 'points');
+    
+    return {
+      width: Math.round(targetWidth),
+      height: Math.round(targetHeight)
+    };
+  }
+  
+  private parseSvgViewBox(svgString: string): {width: number, height: number} {
+    try {
+      // Try to extract viewBox from SVG tag
+      const viewBoxMatch = svgString.match(/viewBox\s*=\s*["']([^"']+)["']/);
+      if (viewBoxMatch) {
+        const viewBoxValues = viewBoxMatch[1].split(/\s+/);
+        if (viewBoxValues.length === 4) {
+          const width = parseFloat(viewBoxValues[2]);
+          const height = parseFloat(viewBoxValues[3]);
+          
+          if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+            console.log('WordInserter: Parsed viewBox successfully:', width, 'x', height);
+            return { width, height };
+          }
+        }
+      }
+      
+      // Fallback: try to extract width/height attributes
+      const widthMatch = svgString.match(/width\s*=\s*["']?([^"'\s>]+)/);
+      const heightMatch = svgString.match(/height\s*=\s*["']?([^"'\s>]+)/);
+      
+      if (widthMatch && heightMatch) {
+        const width = parseFloat(widthMatch[1]);
+        const height = parseFloat(heightMatch[1]);
+        
+        if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+          console.log('WordInserter: Parsed width/height attributes:', width, 'x', height);
+          return { width, height };
+        }
+      }
+      
+      console.log('WordInserter: Could not parse SVG dimensions, using fallback');
+      return { width: 0, height: 0 }; // Signal to use natural dimensions
+      
+    } catch (error) {
+      console.error('WordInserter: Error parsing SVG dimensions:', error);
+      return { width: 0, height: 0 };
+    }
   }
 }
 
@@ -304,6 +865,39 @@ export function createDiagramInserter(): DiagramInserter {
       return new WordInserter();
     default:
       throw new Error(`Unsupported platform: ${platform}`);
+  }
+}
+
+// Helper function to capture cursor position (Word only) - Legacy
+export async function captureCursorPosition(inserter: DiagramInserter): Promise<void> {
+  const platform = detectOfficePlatform();
+  if (platform === OfficePlatform.Word && inserter.captureCursorPosition) {
+    console.log('Capturing cursor position before task pane interaction (legacy)');
+    await inserter.captureCursorPosition();
+  } else {
+    console.log('Cursor position capture not needed for this platform');
+  }
+}
+
+// Helper function to exit insertion mode (Word only)
+export async function exitInsertionMode(inserter: DiagramInserter): Promise<void> {
+  const platform = detectOfficePlatform();
+  if (platform === OfficePlatform.Word && inserter.exitInsertionMode) {
+    console.log('Exiting insertion mode');
+    await inserter.exitInsertionMode();
+  } else {
+    console.log('Insertion mode exit not needed for this platform');
+  }
+}
+
+// Helper function to insert at current position (Word only)
+export async function insertAtCurrentPosition(inserter: DiagramInserter): Promise<void> {
+  const platform = detectOfficePlatform();
+  if (platform === OfficePlatform.Word && inserter.insertAtCurrentPosition) {
+    console.log('Inserting at current position');
+    await inserter.insertAtCurrentPosition();
+  } else {
+    throw new Error('Insert at current position not available for this platform');
   }
 }
 
@@ -1646,16 +2240,20 @@ const shapesApproximatelyMatch = (info1: string, info2: string): boolean => {
   return true;
 };
 
-// Save settings to Custom XML Parts
+// Save settings to Custom XML Parts (platform-agnostic)
 export const saveSettings = async (settings: MermaidSettings): Promise<void> => {
   if (!isOfficeContext) {
     console.log('Demo mode: Would save settings:', settings);
     return;
   }
 
-  return PowerPoint.run(async (context) => {
-    const presentation = context.presentation;
-    const customXmlParts = presentation.customXmlParts;
+  const platform = detectOfficePlatform();
+  console.log('Saving settings for platform:', platform);
+
+  if (platform === OfficePlatform.PowerPoint) {
+    return PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+      const customXmlParts = presentation.customXmlParts;
     
     // First, remove any existing settings XML parts
     customXmlParts.load('items');
@@ -1699,19 +2297,73 @@ export const saveSettings = async (settings: MermaidSettings): Promise<void> => 
     customXmlParts.add(xmlContent);
     await context.sync();
     console.log('Settings saved successfully');
-  });
+    });
+  } else if (platform === OfficePlatform.Word) {
+    return Word.run(async (context) => {
+      const customXmlParts = context.document.customXmlParts;
+      
+      // First, remove any existing settings XML parts
+      customXmlParts.load('items');
+      await context.sync();
+      
+      // Remove existing settings
+      for (let i = customXmlParts.items.length - 1; i >= 0; i--) {
+        const xmlPart = customXmlParts.items[i];
+        try {
+          const xmlContent = xmlPart.getXml();
+          await context.sync();
+          
+          if (xmlContent && xmlContent.value && xmlContent.value.includes('<MermaidSettings>')) {
+            xmlPart.delete();
+            console.log('Removed existing settings XML part');
+          }
+        } catch (error) {
+          // Ignore errors when checking individual parts
+          continue;
+        }
+      }
+      
+      await context.sync();
+      
+      // Create new settings XML (same format as PowerPoint)
+      const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<MermaidSettings>
+  <FontFamily><![CDATA[${settings.fontFamily}]]></FontFamily>
+  <FontSize>${settings.fontSize}</FontSize>
+  <PrimaryColor>${settings.primaryColor}</PrimaryColor>
+  <PrimaryTextColor>${settings.primaryTextColor}</PrimaryTextColor>
+  <PrimaryBorderColor>${settings.primaryBorderColor}</PrimaryBorderColor>
+  <LineColor>${settings.lineColor}</LineColor>
+  <BackgroundColor>${settings.backgroundColor}</BackgroundColor>
+  <SecondaryColor>${settings.secondaryColor}</SecondaryColor>
+  <TertiaryColor>${settings.tertiaryColor}</TertiaryColor>
+  <Theme>${settings.theme}</Theme>
+  <UpdatedAt>${new Date().toISOString()}</UpdatedAt>
+</MermaidSettings>`;
+
+      customXmlParts.add(xmlContent);
+      await context.sync();
+      console.log('Settings saved successfully in Word');
+    });
+  } else {
+    throw new Error(`Unsupported platform for settings: ${platform}`);
+  }
 };
 
-// Load settings from Custom XML Parts
+// Load settings from Custom XML Parts (platform-agnostic)
 export const loadSettings = async (): Promise<MermaidSettings> => {
   if (!isOfficeContext) {
     console.log('Demo mode: Using default settings');
     return defaultSettings;
   }
 
-  return PowerPoint.run(async (context) => {
-    const presentation = context.presentation;
-    const customXmlParts = presentation.customXmlParts;
+  const platform = detectOfficePlatform();
+  console.log('Loading settings for platform:', platform);
+
+  if (platform === OfficePlatform.PowerPoint) {
+    return PowerPoint.run(async (context) => {
+      const presentation = context.presentation;
+      const customXmlParts = presentation.customXmlParts;
     customXmlParts.load('items');
     await context.sync();
 
@@ -1771,5 +2423,72 @@ export const loadSettings = async (): Promise<MermaidSettings> => {
     
     console.log('No settings found, using defaults');
     return defaultSettings;
-  });
+    });
+  } else if (platform === OfficePlatform.Word) {
+    return Word.run(async (context) => {
+      const customXmlParts = context.document.customXmlParts;
+      customXmlParts.load('items');
+      await context.sync();
+
+      // Look for settings XML part (same logic as PowerPoint)
+      for (let i = 0; i < customXmlParts.items.length; i++) {
+        const xmlPart = customXmlParts.items[i];
+        
+        try {
+          const xmlContent = xmlPart.getXml();
+          await context.sync();
+          
+          if (xmlContent && xmlContent.value && xmlContent.value.includes('<MermaidSettings>')) {
+            const xmlDoc = new DOMParser().parseFromString(xmlContent.value, 'text/xml');
+            
+            // Check for parsing errors
+            const parserError = xmlDoc.querySelector('parsererror');
+            if (parserError) {
+              console.log('Settings XML parse error:', parserError.textContent);
+              continue;
+            }
+            
+            // Extract settings values
+            const fontFamilyElement = xmlDoc.querySelector('FontFamily');
+            const fontSizeElement = xmlDoc.querySelector('FontSize');
+            const primaryColorElement = xmlDoc.querySelector('PrimaryColor');
+            const primaryTextColorElement = xmlDoc.querySelector('PrimaryTextColor');
+            const primaryBorderColorElement = xmlDoc.querySelector('PrimaryBorderColor');
+            const lineColorElement = xmlDoc.querySelector('LineColor');
+            const backgroundColorElement = xmlDoc.querySelector('BackgroundColor');
+            const secondaryColorElement = xmlDoc.querySelector('SecondaryColor');
+            const tertiaryColorElement = xmlDoc.querySelector('TertiaryColor');
+            const themeElement = xmlDoc.querySelector('Theme');
+            
+            if (fontFamilyElement && fontSizeElement && primaryColorElement) {
+              const loadedSettings: MermaidSettings = {
+                fontFamily: fontFamilyElement.textContent || defaultSettings.fontFamily,
+                fontSize: parseInt(fontSizeElement.textContent || '16') || defaultSettings.fontSize,
+                primaryColor: primaryColorElement.textContent || defaultSettings.primaryColor,
+                primaryTextColor: primaryTextColorElement?.textContent || defaultSettings.primaryTextColor,
+                primaryBorderColor: primaryBorderColorElement?.textContent || defaultSettings.primaryBorderColor,
+                lineColor: lineColorElement?.textContent || defaultSettings.lineColor,
+                backgroundColor: backgroundColorElement?.textContent || defaultSettings.backgroundColor,
+                secondaryColor: secondaryColorElement?.textContent || defaultSettings.secondaryColor,
+                tertiaryColor: tertiaryColorElement?.textContent || defaultSettings.tertiaryColor,
+                theme: (themeElement?.textContent as MermaidSettings['theme']) || defaultSettings.theme
+              };
+              
+              console.log('Settings loaded successfully from Word:', loadedSettings);
+              return loadedSettings;
+            }
+          }
+        } catch (error) {
+          console.log('Error reading settings XML part:', error);
+          continue;
+        }
+      }
+      
+      console.log('No settings found in Word, using defaults');
+      return defaultSettings;
+    });
+  } else {
+    console.log('Unsupported platform, using default settings');
+    return defaultSettings;
+  }
 };

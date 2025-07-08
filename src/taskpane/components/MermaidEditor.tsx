@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import mermaid from 'mermaid';
-import { insertDiagram, updateDiagram, getSelectedDiagram, listAllStoredDiagrams, getSelectedShapeInfo, testDiagramStorage, checkOfficeContext, loadSettings, saveSettings, MermaidSettings, defaultSettings, createDiagramInserter, detectOfficePlatform, OfficePlatform } from '../utils/powerPointUtils';
+import { insertDiagram, updateDiagram, getSelectedDiagram, listAllStoredDiagrams, getSelectedShapeInfo, testDiagramStorage, checkOfficeContext, loadSettings, saveSettings, MermaidSettings, defaultSettings, createDiagramInserter, detectOfficePlatform, OfficePlatform, captureCursorPosition, exitInsertionMode, insertAtCurrentPosition } from '../utils/powerPointUtils';
 import Settings from './Settings';
 
 /* global Office */
@@ -27,6 +27,7 @@ const MermaidEditor: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [currentPlatform, setCurrentPlatform] = useState<OfficePlatform>(OfficePlatform.Unknown);
   const [diagramInserter, setDiagramInserter] = useState<any>(null);
+  const [isInsertionMode, setIsInsertionMode] = useState(false);
 
   useEffect(() => {
     initializeMermaidAndSettings();
@@ -46,6 +47,16 @@ const MermaidEditor: React.FC = () => {
       if (platform !== OfficePlatform.Unknown) {
         const inserter = createDiagramInserter();
         setDiagramInserter(inserter);
+        
+        // Set up insertion complete callback for Word
+        if (platform === OfficePlatform.Word && (inserter as any).setInsertionCompleteCallback) {
+          (inserter as any).setInsertionCompleteCallback(() => {
+            console.log('Insertion complete callback triggered');
+            setIsInsertionMode(false);
+            setSuccessMessage('Diagram inserted successfully at your selected location!');
+            setTimeout(() => setSuccessMessage(''), 5000);
+          });
+        }
       }
       
       // Load saved settings
@@ -55,8 +66,8 @@ const MermaidEditor: React.FC = () => {
       // Initialize mermaid with loaded settings
       applyMermaidSettings(loadedSettings);
       
-      // Check if there's a selected diagram to edit (only for PowerPoint for now)
-      if (platform === OfficePlatform.PowerPoint) {
+      // Check if there's a selected diagram to edit (for both PowerPoint and Word)
+      if (platform === OfficePlatform.PowerPoint || platform === OfficePlatform.Word) {
         checkSelectedDiagram();
       }
       
@@ -66,7 +77,7 @@ const MermaidEditor: React.FC = () => {
       console.error('Failed to load settings:', error);
       // Use default settings if loading fails
       applyMermaidSettings(defaultSettings);
-      if (currentPlatform === OfficePlatform.PowerPoint) {
+      if (currentPlatform === OfficePlatform.PowerPoint || currentPlatform === OfficePlatform.Word) {
         checkSelectedDiagram();
       }
       setTimeout(() => renderMermaid(), 100);
@@ -184,6 +195,14 @@ const MermaidEditor: React.FC = () => {
   };
 
   const handleInsert = async () => {
+    console.log('=== INSERTION DEBUG START ===');
+    console.log('Current platform:', currentPlatform);
+    console.log('Is insertion mode:', isInsertionMode);
+    console.log('Diagram inserter available:', !!diagramInserter);
+    
+    // For Word, use the two-step insertion process
+    // For PowerPoint, use direct insertion
+    
     let svgToUse = svgContent;
     
     // Auto-generate preview if it doesn't exist
@@ -217,7 +236,7 @@ const MermaidEditor: React.FC = () => {
         throw new Error('Diagram inserter not initialized. Please refresh the add-in.');
       }
       
-      if (isEditing && selectedDiagramId && currentPlatform === OfficePlatform.PowerPoint) {
+      if (isEditing && selectedDiagramId && currentPlatform !== OfficePlatform.Unknown) {
         console.log('Updating existing diagram:', selectedDiagramId);
         await diagramInserter.updateDiagram(selectedDiagramId, mermaidCode, svgToUse);
         setSuccessMessage('Diagram updated successfully!');
@@ -230,13 +249,11 @@ const MermaidEditor: React.FC = () => {
         const platformName = currentPlatform === OfficePlatform.Word ? 'document' : 'slide';
         setSuccessMessage(`Diagram inserted into ${platformName} successfully!`);
         
-        // Only reset after inserting a new diagram (and not editing in Word)
-        if (currentPlatform === OfficePlatform.PowerPoint) {
-          setIsEditing(false);
-          setSelectedDiagramId(null);
-          setMermaidCode(defaultMermaidCode);
-          setSvgContent('');
-        }
+        // Reset after inserting a new diagram (Word is disabled, so always reset)
+        setIsEditing(false);
+        setSelectedDiagramId(null);
+        setMermaidCode(defaultMermaidCode);
+        setSvgContent('');
         setError('');
       }
       
@@ -250,18 +267,23 @@ const MermaidEditor: React.FC = () => {
       const errorMessage = err instanceof Error ? err.message : 'Failed to insert diagram';
       
       if (errorMessage.startsWith('SUCCESS:')) {
-        // This is actually a success message with clipboard instructions
+        // This is the insertion mode activation message for Word
         setError('');
         setSuccessMessage(errorMessage.replace('SUCCESS: ', ''));
         
-        // Don't clear the preview or reset form for clipboard fallback
-        // User needs to manually paste in PowerPoint and might want to try direct insertion again
+        // Set insertion mode state for Word
+        if (currentPlatform === OfficePlatform.Word) {
+          setIsInsertionMode(true);
+        }
+        
+        // Don't clear the message immediately - user needs to see it
         setTimeout(() => {
           setSuccessMessage('');
-        }, 10000);
+        }, 15000);
       } else {
         setError(`Insertion failed: ${errorMessage}`);
         setSuccessMessage('');
+        setIsInsertionMode(false);
         // Don't clear preview on error - user might want to try again
       }
     }
@@ -395,6 +417,54 @@ const MermaidEditor: React.FC = () => {
     setTimeout(() => setSuccessMessage(''), 3000);
   };
 
+  const handleCaptureCursor = async () => {
+    setError('');
+    setSuccessMessage('');
+    try {
+      if (diagramInserter && currentPlatform === OfficePlatform.Word) {
+        await captureCursorPosition(diagramInserter);
+        setSuccessMessage('Cursor position captured! Now you can insert diagrams and they should appear at the cursor location.');
+        setTimeout(() => setSuccessMessage(''), 8000);
+      } else {
+        setError('Cursor capture is only available in Word');
+      }
+    } catch (error) {
+      setError('Failed to capture cursor position. Make sure your cursor is in the document.');
+    }
+  };
+
+  const handleCancelInsertion = async () => {
+    setError('');
+    setSuccessMessage('');
+    try {
+      if (diagramInserter && currentPlatform === OfficePlatform.Word) {
+        await exitInsertionMode(diagramInserter);
+        setIsInsertionMode(false);
+        setSuccessMessage('Insertion mode cancelled.');
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    } catch (error) {
+      setError('Failed to cancel insertion mode.');
+      setIsInsertionMode(false);
+    }
+  };
+
+  const handleInsertHere = async () => {
+    setError('');
+    setSuccessMessage('');
+    try {
+      if (diagramInserter && currentPlatform === OfficePlatform.Word && isInsertionMode) {
+        await insertAtCurrentPosition(diagramInserter);
+        setIsInsertionMode(false);
+        setSuccessMessage('Diagram inserted at cursor position successfully!');
+        setTimeout(() => setSuccessMessage(''), 5000);
+      }
+    } catch (error) {
+      setError('Failed to insert diagram at current position.');
+      setIsInsertionMode(false);
+    }
+  };
+
   const handleSettingsChange = async (newSettings: MermaidSettings) => {
     try {
       setSettings(newSettings);
@@ -450,7 +520,7 @@ const MermaidEditor: React.FC = () => {
             ✨
           </button>
           
-          {currentPlatform === OfficePlatform.PowerPoint && (
+          {(currentPlatform === OfficePlatform.PowerPoint || currentPlatform === OfficePlatform.Word) && (
             <button 
               onClick={handleCheckSelectedDiagram}
               title="Edit Selected Diagram"
@@ -512,6 +582,98 @@ const MermaidEditor: React.FC = () => {
             🔧
           </button>
         </div>
+
+        {/* Word Insertion Mode Indicator and Controls */}
+        {currentPlatform === OfficePlatform.Word && (
+          <div style={{ marginBottom: '10px' }}>
+            {isInsertionMode ? (
+              // Insertion mode active - show cancel button and instructions
+              <div>
+                <div style={{
+                  padding: '12px',
+                  backgroundColor: '#fff3cd',
+                  border: '2px solid #ffc107',
+                  borderRadius: '4px',
+                  marginBottom: '10px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#856404', marginBottom: '5px' }}>
+                    🎯 INSERTION MODE ACTIVE
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#856404' }}>
+                    Place your cursor in the document, then click "Insert Here"
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={handleInsertHere}
+                    title="Insert diagram at current cursor position"
+                    style={{
+                      padding: '10px 16px',
+                      backgroundColor: '#28a745',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      flex: '1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}>
+                    📍 Insert Here
+                  </button>
+                  <button 
+                    onClick={handleCancelInsertion}
+                    title="Cancel insertion mode"
+                    style={{
+                      padding: '10px 16px',
+                      backgroundColor: '#dc3545',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      flex: '1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}>
+                    ❌ Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Normal mode - show legacy capture button (hidden by default)
+              <div style={{ display: 'none' }}>
+                <button 
+                  onClick={handleCaptureCursor}
+                  title="Legacy cursor capture (not needed with new workflow)"
+                  style={{
+                    padding: '10px 16px',
+                    backgroundColor: '#6c757d',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}>
+                  📍 Legacy Capture (Hidden)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Debug Tools (hidden by default) */}
         {showDebugMode && (
